@@ -131,10 +131,12 @@ def _deploy(report_id: str) -> None:
             raise RuntimeError("repository has no root Dockerfile; compose-only deployment is not supported yet")
 
         _write_status(report_id, status="building", phase="build")
+        dockerfile = (worktree / "Dockerfile").read_text(encoding="utf-8", errors="replace")
+        target = ["--target", "production"] if re.search(r"^FROM\s+.+\s+AS\s+production\s*$", dockerfile, re.MULTILINE | re.IGNORECASE) else []
         _run(
             [
                 "docker", "buildx", "build", "--load", "--label", f"buildproof.source_commit={commit}",
-                "-t", image, ".",
+                *target, "-t", image, ".",
             ],
             timeout=MAX_BUILD_SECONDS,
             cwd=worktree,
@@ -183,7 +185,8 @@ def _reaper() -> None:
     while True:
         for path in ROOT.glob("*/status.json"):
             status = _read_status(path.parent.name) or {}
-            if status.get("status") == "running" and float(status.get("expires_at", 0)) <= time.time():
+            expires_at = status.get("expires_at")
+            if status.get("status") == "running" and expires_at is not None and float(expires_at) <= time.time():
                 _destroy(path.parent.name)
                 _write_status(path.parent.name, status="expired", phase="destroyed")
                 _event(path.parent.name, "deployment.destroyed", "TTL expired; container and data removed")
