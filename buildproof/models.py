@@ -19,6 +19,7 @@ class Endpoint:
     auth: str
     transport: str
     evidence: Evidence
+    layer: str = "backend"
 
 
 @dataclass(frozen=True)
@@ -26,6 +27,18 @@ class ClientCall:
     path: str
     transport: str
     evidence: Evidence
+
+
+@dataclass(frozen=True)
+class CallRelation:
+    """An evidence-backed edge from a page to an API and its final backend."""
+
+    page: str
+    call: ClientCall
+    api: Endpoint | None
+    backend: Endpoint | None
+    status: str
+    evidence: list[Evidence] = field(default_factory=list)
 
 
 @dataclass
@@ -73,6 +86,7 @@ class AnalysisReport:
     entrypoints: list[Evidence]
     pages: list[WebSurface]
     endpoints: list[Endpoint]
+    relations: list[CallRelation]
     domains: list[BusinessDomain]
     components: list[Component]
     stats: dict[str, int]

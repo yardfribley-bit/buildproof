@@ -56,6 +56,29 @@ def test_marks_unresolved_client_calls_without_guessing(tmp_path: Path) -> None:
     assert report.stats["unresolved_calls"] == 1
     assert report.pages[0].unresolved_calls[0].path == "/api/v1/missing"
     assert report.pages[0].endpoints == []
+    assert report.relations[0].status == "unresolved"
+
+
+def test_builds_frontend_next_api_backend_relation(tmp_path: Path) -> None:
+    _write(tmp_path / "web/app/dashboard/page.tsx", 'fetch("/api/users/42");\n')
+    _write(
+        tmp_path / "web/app/api/users/[id]/route.ts",
+        'export async function GET() { return fetch("/api/v1/users/${id}") }\n',
+    )
+    _write(
+        tmp_path / "backend/users.py",
+        'router = APIRouter(prefix="/api/v1/users")\n'
+        '@router.get("/{user_id}")\nasync def get_user(): pass\n',
+    )
+
+    report = analyze_repository(tmp_path)
+
+    relation = report.relations[0]
+    assert relation.status == "proxy"
+    assert relation.api is not None and relation.api.layer == "frontend-api"
+    assert relation.api.path == "/api/users/:id"
+    assert relation.backend is not None and relation.backend.handler == "get_user"
+    assert report.stats["mapped_calls"] == 1
 
 
 def test_analysis_api_returns_evidence_report(tmp_path: Path) -> None:

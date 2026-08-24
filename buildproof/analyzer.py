@@ -15,6 +15,7 @@ from pathlib import Path
 from .models import (
     AnalysisReport,
     BusinessDomain,
+    CallRelation,
     ClientCall,
     Component,
     Endpoint,
@@ -34,7 +35,7 @@ IGNORED_PARTS = {
     "coverage",
     "vendor",
 }
-API_LITERAL = re.compile(r"[\"'`](/(?:api|ws)/[^\"'`\s]*)[\"'`]")
+API_LITERAL = re.compile(r"[\"'`](/(?:api|ws)(?:/[^\"'`\s]*)?)[\"'`]")
 IMPORT_RE = re.compile(
     r"(?:from\s+|import\s*(?:[^\"']+?\s+from\s+)?)[\"']([^\"']+)[\"']"
 )
@@ -73,6 +74,42 @@ def _route_from_next_page(path: Path, app_root: Path) -> str:
     route = re.sub(r"\[\.\.\.([^]]+)]", r"*\1", route)
     route = re.sub(r"\[([^]]+)]", r":\1", route)
     return route.rstrip("/") or "/"
+
+
+def _next_route_endpoints(root: Path, files: list[Path]) -> tuple[list[Endpoint], dict[str, list[ClientCall]]]:
+    """Discover Next route handlers and the backend URLs they proxy to."""
+    endpoints: list[Endpoint] = []
+    downstream: dict[str, list[ClientCall]] = defaultdict(list)
+    for path in files:
+        if path.suffix not in {".js", ".jsx", ".ts", ".tsx"} or not re.fullmatch(
+            r"route\.(?:js|jsx|ts|tsx)", path.name
+        ):
+            continue
+        app_root = next((parent for parent in path.parents if parent.name == "app"), None)
+        if app_root is None:
+            continue
+        route = _route_from_next_page(path, app_root)
+        text = _read(path)
+        lines = text.splitlines()
+        methods: list[tuple[str, str, int]] = []
+        for match in re.finditer(
+            r"(?:export\s+)?(?:async\s+)?function\s+(GET|POST|PUT|PATCH|DELETE|OPTIONS|HEAD)\b|export\s+(?:const|let|var)\s+(GET|POST|PUT|PATCH|DELETE|OPTIONS|HEAD)\b",
+            text,
+        ):
+            method = match.group(1) or match.group(2)
+            methods.append((method, method, text.count("\n", 0, match.start()) + 1))
+        for method, handler, line in methods:
+            endpoints.append(
+                Endpoint(method, route, handler, "application", "http", _evidence(path, root, line, lines[line - 1]), "frontend-api")
+            )
+        for match in API_LITERAL.finditer(text):
+            literal = match.group(1)
+            # A literal equal to this route is usually documentation or self-reference.
+            if _template_matches(literal, route):
+                continue
+            line = text.count("\n", 0, match.start()) + 1
+            downstream[route].append(ClientCall(literal, "http", _evidence(path, root, line, lines[line - 1])))
+    return sorted(endpoints, key=lambda item: (item.path, item.method)), downstream
 
 
 def _normalize_template(value: str) -> str:
@@ -441,15 +478,37 @@ def analyze_repository(repo_path: str | Path) -> AnalysisReport:
         raise ValueError(f"Repository does not exist: {root}")
     files = _files(root)
     pages = _frontend(root, files)
-    endpoints = _backend(root, files)
+    backend_endpoints = _backend(root, files)
+    next_endpoints, next_downstream = _next_route_endpoints(root, files)
+    endpoints = next_endpoints + backend_endpoints
     components = _scan_vulnerabilities(_components(root))
+    relations: list[CallRelation] = []
     for page in pages:
         for call in page.calls:
-            matches = [endpoint for endpoint in endpoints if _template_matches(call.path, endpoint.path)]
-            if matches:
-                page.endpoints.extend(matches)
+            api_matches = [endpoint for endpoint in next_endpoints if _template_matches(call.path, endpoint.path)]
+            direct_matches = [endpoint for endpoint in backend_endpoints if _template_matches(call.path, endpoint.path)]
+            if api_matches:
+                page.endpoints.extend(api_matches)
+                for api in api_matches:
+                    targets = [
+                        endpoint
+                        for downstream_call in next_downstream.get(api.path, [])
+                        for endpoint in backend_endpoints
+                        if _template_matches(downstream_call.path, endpoint.path)
+                    ]
+                    if targets:
+                        page.endpoints.extend(targets)
+                        for target in targets:
+                            relations.append(CallRelation(page.route, call, api, target, "proxy", [page.source, call.evidence, api.evidence, target.evidence]))
+                    else:
+                        relations.append(CallRelation(page.route, call, api, None, "api-only", [page.source, call.evidence, api.evidence]))
+            elif direct_matches:
+                page.endpoints.extend(direct_matches)
+                for endpoint in direct_matches:
+                    relations.append(CallRelation(page.route, call, None, endpoint, "direct", [page.source, call.evidence, endpoint.evidence]))
             else:
                 page.unresolved_calls.append(call)
+                relations.append(CallRelation(page.route, call, None, None, "unresolved", [page.source, call.evidence]))
 
     domains: dict[str, BusinessDomain] = {}
     for endpoint in endpoints:
@@ -475,6 +534,7 @@ def analyze_repository(repo_path: str | Path) -> AnalysisReport:
         entrypoints=_entrypoints(root),
         pages=pages,
         endpoints=endpoints,
+        relations=relations,
         domains=sorted(domains.values(), key=lambda item: (-len(item.endpoints), item.name)),
         components=components,
         stats={
@@ -487,7 +547,7 @@ def analyze_repository(repo_path: str | Path) -> AnalysisReport:
                 1
                 for page in pages
                 for call in page.calls
-                if any(_template_matches(call.path, endpoint.path) for endpoint in endpoints)
+                if any(relation.page == page.route and relation.call == call and relation.status != "unresolved" for relation in relations)
             ),
             "unresolved_calls": unresolved,
             "business_domains": len(domains),
