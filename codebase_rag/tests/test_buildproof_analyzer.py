@@ -6,7 +6,7 @@ from pathlib import Path
 
 from starlette.testclient import TestClient
 
-from buildproof import analyze_repository
+from buildproof import analyze_repository, rescan
 from buildproof.server import create_app
 
 
@@ -150,6 +150,46 @@ def test_attack_manifest_api_is_machine_readable(tmp_path: Path) -> None:
 
     assert response.status_code == 200
     assert response.json()["schema_version"] == "buildproof.attack-manifest.v1"
+
+
+def test_rescan_all_updates_every_monitored_project_and_status(tmp_path: Path, monkeypatch) -> None:
+    previous = os.environ.get("BUILDPROOF_DATA")
+    os.environ["BUILDPROOF_DATA"] = str(tmp_path / "data")
+    reports = tmp_path / "data/reports"
+    reports.mkdir(parents=True)
+    for name in ("one", "two"):
+        _write(
+            reports / f"owner--{name}.json",
+            json.dumps({
+                "id": f"owner--{name}", "project": name,
+                "root": f"https://github.com/owner/{name}", "generated_at": "old", "stats": {},
+            }),
+        )
+    scanned: list[str] = []
+
+    def fake_analyze(source: str) -> dict[str, object]:
+        scanned.append(source)
+        name = source.rsplit("/", 1)[-1]
+        return {
+            "id": f"owner--{name}", "project": name, "generated_at": "new",
+            "attack_manifest": {"summary": {"attack_surfaces": 3}},
+        }
+
+    monkeypatch.setattr(rescan, "_analyze", fake_analyze)
+    try:
+        result = rescan.rescan_all()
+        with TestClient(create_app()) as client:
+            saved_status = client.get("/api/rescan-status").json()
+    finally:
+        if previous is None:
+            os.environ.pop("BUILDPROOF_DATA", None)
+        else:
+            os.environ["BUILDPROOF_DATA"] = previous
+
+    assert set(scanned) == {"https://github.com/owner/one", "https://github.com/owner/two"}
+    assert result["status"] == "completed"
+    assert result["completed"] == 2
+    assert saved_status["results"][0]["attack_surfaces"] == 3
 
 
 def test_analysis_api_returns_evidence_report(tmp_path: Path) -> None:

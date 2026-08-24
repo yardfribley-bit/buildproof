@@ -9,6 +9,8 @@ wheels/
 # Virtual environments
 .venv
 .env
+.deploy.env
+.surface.env
 .tmp
 .ruff_cache/
 .mypy_cache/

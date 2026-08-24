@@ -35,6 +35,10 @@ def _reports_root() -> Path:
     return root
 
 
+def _rescan_status_path() -> Path:
+    return _reports_root().parent / "rescan-status.json"
+
+
 def _report_id(report: dict[str, object]) -> str:
     root = str(report.get("root", ""))
     match = GITHUB_REPO.fullmatch(root)
@@ -124,7 +128,7 @@ async def index(_request: Request) -> FileResponse:
 async def asset(request: Request) -> FileResponse:
     name = request.path_params["name"]
     images = {"deeptutor-overview.png", "deeptutor-call-chain.png", "deeptutor-supply-chain.png"}
-    if name not in {"app.js", "styles.css", *images}:
+    if name not in {"app.js", "styles.css", "security.css", *images}:
         return FileResponse(STATIC_ROOT / "index.html", status_code=404)
     return FileResponse(STATIC_ROOT / "images" / name if name in images else STATIC_ROOT / name)
 
@@ -162,6 +166,16 @@ async def history(_request: Request) -> JSONResponse:
     return JSONResponse(_history())
 
 
+async def rescan_status(_request: Request) -> JSONResponse:
+    path = _rescan_status_path()
+    if not path.is_file():
+        return JSONResponse({"status": "never_run"})
+    try:
+        return JSONResponse(json.loads(path.read_text(encoding="utf-8")))
+    except (OSError, json.JSONDecodeError):
+        return JSONResponse({"status": "unknown", "error": "扫描状态文件不可读。"}, status_code=503)
+
+
 async def saved_report(request: Request) -> JSONResponse:
     report_id = request.path_params["report_id"].lower()
     if not re.fullmatch(r"[a-z0-9_.-]+", report_id):
@@ -196,6 +210,7 @@ def create_app() -> Starlette:
             Route("/articles/{slug}", article),
             Route("/api/analyze", analyze, methods=["GET", "POST"]),
             Route("/api/projects", history),
+            Route("/api/rescan-status", rescan_status),
             Route("/api/projects/{report_id}", saved_report),
             Route("/api/projects/{report_id}/attack-manifest", attack_manifest),
         ],
