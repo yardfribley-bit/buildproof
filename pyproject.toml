@@ -94,7 +94,7 @@ codebase_rag = [
     "parsers/ast_grep_patterns/*.yaml",
     "analyzers/ast_grep_rules/*/*.yaml",
 ]
-buildproof = ["static/*.html", "static/*.css", "static/*.js", "static/articles/*.html"]
+buildproof = ["static/*.html", "static/*.css", "static/*.js", "static/images/*.png", "static/articles/*.html"]
 
 [project.optional-dependencies]
 test = [

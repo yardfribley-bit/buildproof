@@ -140,8 +140,11 @@ def test_article_library_and_article_are_served() -> None:
     with TestClient(create_app()) as client:
         library = client.get("/articles")
         article = client.get("/articles/agent-code-acceptance")
+        screenshot = client.get("/assets/deeptutor-overview.png")
 
     assert library.status_code == 200
     assert "文章与研究" in library.text
     assert article.status_code == 200
     assert "Agent 开始写完整系统" in article.text
+    assert screenshot.status_code == 200
+    assert screenshot.headers["content-type"] == "image/png"

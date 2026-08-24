@@ -116,9 +116,10 @@ async def index(_request: Request) -> FileResponse:
 
 async def asset(request: Request) -> FileResponse:
     name = request.path_params["name"]
-    if name not in {"app.js", "styles.css"}:
+    images = {"deeptutor-overview.png", "deeptutor-call-chain.png", "deeptutor-supply-chain.png"}
+    if name not in {"app.js", "styles.css", *images}:
         return FileResponse(STATIC_ROOT / "index.html", status_code=404)
-    return FileResponse(STATIC_ROOT / name)
+    return FileResponse(STATIC_ROOT / "images" / name if name in images else STATIC_ROOT / name)
 
 
 async def articles(_request: Request) -> FileResponse:
