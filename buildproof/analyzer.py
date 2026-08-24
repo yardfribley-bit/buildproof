@@ -21,6 +21,7 @@ from .models import (
     Component,
     Endpoint,
     Evidence,
+    FrontendComponent,
     Vulnerability,
     WebSurface,
 )
@@ -216,6 +217,66 @@ def _frontend(root: Path, files: list[Path]) -> list[WebSurface]:
             )
         )
     return surfaces
+
+
+def _frontend_components(root: Path, files: list[Path], pages: list[WebSurface]) -> list[FrontendComponent]:
+    candidates = {path.resolve() for path in files if path.suffix in {".js", ".jsx", ".ts", ".tsx"}}
+    imports: dict[Path, list[Path]] = defaultdict(list)
+    definitions: dict[Path, list[tuple[str, str, int]]] = defaultdict(list)
+    patterns = (
+        ("function", re.compile(r"\b(?:export\s+(?:default\s+)?)?(?:async\s+)?function\s+([A-Z][\w$]*)\b")),
+        (
+            "component",
+            re.compile(
+                r"\b(?:export\s+)?(?:const|let|var)\s+([A-Z][\w$]*)\s*=\s*"
+                r"(?:(?:React\.)?(?:memo|forwardRef|lazy)\s*\(|(?:async\s+)?(?:\([^;=]*\)|[A-Za-z_$][\w$]*)\s*=>)"
+            ),
+        ),
+        ("class", re.compile(r"\b(?:export\s+(?:default\s+)?)?class\s+([A-Z][\w$]*)\s+extends\s+(?:React\.)?(?:Pure)?Component\b")),
+    )
+    for path in candidates:
+        text = _read(path)
+        for spec in IMPORT_RE.findall(text):
+            resolved = _resolve_import(path, spec, root, candidates)
+            if resolved:
+                imports[path].append(resolved)
+        for kind, pattern in patterns:
+            for match in pattern.finditer(text):
+                definitions[path].append((match.group(1), kind, text.count("\n", 0, match.start()) + 1))
+
+    reachable_from: dict[Path, set[str]] = defaultdict(set)
+    page_by_path = {page.source.path: page.route for page in pages}
+    for relative, route in page_by_path.items():
+        start = (root / relative).resolve()
+        layouts = []
+        for parent in start.parents:
+            layouts.extend(candidate for name in ("layout.tsx", "layout.jsx", "layout.ts", "layout.js") if (candidate := parent / name) in candidates)
+            if parent.name == "app":
+                break
+        queue = deque([start, *layouts])
+        seen: set[Path] = set()
+        while queue and len(seen) < 600:
+            current = queue.popleft()
+            if current in seen:
+                continue
+            seen.add(current)
+            reachable_from[current].add(route)
+            queue.extend(imports.get(current, []))
+
+    found: dict[tuple[Path, str], FrontendComponent] = {}
+    for path, items in definitions.items():
+        lines = _read(path).splitlines()
+        for name, kind, line in items:
+            found.setdefault(
+                (path, name),
+                FrontendComponent(
+                    name=name,
+                    kind=kind,
+                    evidence=_evidence(path, root, line, lines[line - 1]),
+                    pages=sorted(reachable_from.get(path, set())),
+                )
+            )
+    return sorted(found.values(), key=lambda item: (item.evidence.path, item.name))
 
 
 def _literal(node: ast.AST | None) -> str | None:
@@ -520,6 +581,7 @@ def analyze_repository(repo_path: str | Path) -> AnalysisReport:
         raise ValueError(f"Repository does not exist: {root}")
     files = _files(root)
     pages = _frontend(root, files)
+    frontend_components = _frontend_components(root, files, pages)
     backend_endpoints = _backend(root, files)
     next_endpoints, next_downstream = _next_route_endpoints(root, files)
     external_endpoints = _external_service_endpoints(pages)
@@ -584,6 +646,7 @@ def analyze_repository(repo_path: str | Path) -> AnalysisReport:
         relations=relations,
         domains=sorted(domains.values(), key=lambda item: (-len(item.endpoints), item.name)),
         components=components,
+        frontend_components=frontend_components,
         stats={
             "source_files": len(files),
             "pages": len(pages),
@@ -599,6 +662,8 @@ def analyze_repository(repo_path: str | Path) -> AnalysisReport:
             "unresolved_calls": unresolved,
             "business_domains": len(domains),
             "components": len(components),
+            "frontend_components": len(frontend_components),
+            "routed_frontend_components": sum(bool(item.pages) for item in frontend_components),
             "scanned_components": sum(item.scan_status == "scanned" for item in components),
             "vulnerable_components": sum(bool(item.vulnerabilities) for item in components),
             "vulnerabilities": sum(len(item.vulnerabilities) for item in components),

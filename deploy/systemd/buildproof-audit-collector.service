@@ -1,0 +1,21 @@
+[Unit]
+Description=BuildProof Linux runtime audit collector
+After=auditd.service buildproof-surface-relay.service
+Requires=buildproof-surface-relay.service
+
+[Service]
+Type=simple
+EnvironmentFile=/etc/buildproof-surface.env
+ExecStart=/usr/bin/python3 /opt/buildproof-surface/audit_collector.py
+Restart=always
+RestartSec=3
+User=root
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ReadOnlyPaths=/var/log/audit
+ReadWritePaths=/var/lib/buildproof-surface
+
+[Install]
+WantedBy=multi-user.target

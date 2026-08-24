@@ -79,6 +79,14 @@ class Component:
     vulnerabilities: list[Vulnerability] = field(default_factory=list)
 
 
+@dataclass(frozen=True)
+class FrontendComponent:
+    name: str
+    kind: str
+    evidence: Evidence
+    pages: list[str] = field(default_factory=list)
+
+
 @dataclass
 class AnalysisReport:
     project: str
@@ -90,6 +98,7 @@ class AnalysisReport:
     relations: list[CallRelation]
     domains: list[BusinessDomain]
     components: list[Component]
+    frontend_components: list[FrontendComponent]
     stats: dict[str, int]
     warnings: list[str]
     generated_at: str

@@ -48,6 +48,26 @@ def test_maps_next_page_through_imports_to_fastapi_route(tmp_path: Path) -> None
     assert report.pages[0].endpoints[0].handler == "get_user"
 
 
+def test_discovers_source_frontend_components_and_page_reachability(tmp_path: Path) -> None:
+    _write(tmp_path / "web/app/dashboard/page.tsx", 'import Dashboard from "../components/Dashboard"; export default Dashboard;\n')
+    _write(
+        tmp_path / "web/app/components/Dashboard.tsx",
+        'import { StatCard } from "./StatCard";\nexport default function Dashboard() { return <StatCard /> }\n',
+    )
+    _write(tmp_path / "web/app/components/StatCard.tsx", 'export const StatCard = () => <section />;\n')
+    _write(tmp_path / "web/app/components/Unused.tsx", 'export class Unused extends React.Component {}\nexport const LABELS = ["not", "a", "component"];\n')
+
+    report = analyze_repository(tmp_path)
+
+    by_name = {item.name: item for item in report.frontend_components}
+    assert report.stats["frontend_components"] == 3
+    assert report.stats["routed_frontend_components"] == 2
+    assert by_name["Dashboard"].pages == ["/dashboard"]
+    assert by_name["StatCard"].pages == ["/dashboard"]
+    assert by_name["Unused"].pages == []
+    assert "LABELS" not in by_name
+
+
 def test_marks_unresolved_client_calls_without_guessing(tmp_path: Path) -> None:
     _write(tmp_path / "web/app/page.tsx", 'fetch("/api/v1/missing");\n')
 
