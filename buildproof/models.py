@@ -45,6 +45,14 @@ class BusinessDomain:
 
 
 @dataclass(frozen=True)
+class Vulnerability:
+    id: str
+    aliases: list[str]
+    summary: str
+    url: str
+
+
+@dataclass(frozen=True)
 class Component:
     name: str
     version: str
@@ -53,6 +61,8 @@ class Component:
     layer: str
     scope: str
     evidence: Evidence
+    scan_status: str = "not_scanned"
+    vulnerabilities: list[Vulnerability] = field(default_factory=list)
 
 
 @dataclass

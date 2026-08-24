@@ -133,3 +133,4 @@ def test_extracts_direct_supply_chain_components(tmp_path: Path) -> None:
     assert layers["fastapi"] == "后端"
     locked = {item.name: item.locked_version for item in report.components}
     assert locked["eslint"] == "9.22.0"
+    assert all(item.scan_status == "not_scanned" for item in report.components)

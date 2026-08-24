@@ -2,9 +2,13 @@ from __future__ import annotations
 
 import ast
 import json
+import os
 import re
 import tomllib
+import urllib.request
 from collections import defaultdict, deque
+from concurrent.futures import ThreadPoolExecutor
+from dataclasses import replace
 from datetime import UTC, datetime
 from pathlib import Path
 
@@ -15,6 +19,7 @@ from .models import (
     Component,
     Endpoint,
     Evidence,
+    Vulnerability,
     WebSurface,
 )
 
@@ -302,6 +307,50 @@ def _components(root: Path) -> list[Component]:
     return sorted(found.values(), key=lambda item: (item.ecosystem, item.name.lower()))
 
 
+def _osv_json(url: str, payload: dict[str, object] | None = None) -> dict[str, object]:
+    data = json.dumps(payload).encode() if payload is not None else None
+    request = urllib.request.Request(url, data=data, headers={"Content-Type": "application/json"})
+    with urllib.request.urlopen(request, timeout=25) as response:
+        return json.load(response)
+
+
+def _scan_vulnerabilities(components: list[Component]) -> list[Component]:
+    if os.environ.get("BUILDPROOF_OSV", "").lower() not in {"1", "true", "yes"}:
+        return components
+    indexed = [(index, item) for index, item in enumerate(components) if item.locked_version]
+    queries = [
+        {"package": {"name": item.name, "ecosystem": item.ecosystem}, "version": item.locked_version}
+        for _, item in indexed
+    ]
+    try:
+        batch = _osv_json("https://api.osv.dev/v1/querybatch", {"queries": queries}) if queries else {"results": []}
+        results = batch.get("results", [])
+        ids = sorted({vuln["id"] for result in results for vuln in result.get("vulns", []) if vuln.get("id")})
+        with ThreadPoolExecutor(max_workers=8) as executor:
+            details = dict(zip(ids, executor.map(lambda item: _osv_json(f"https://api.osv.dev/v1/vulns/{item}"), ids)))
+    except (OSError, TimeoutError, json.JSONDecodeError):
+        return [replace(item, scan_status="scan_error" if item.locked_version else "missing_version") for item in components]
+    updated = list(components)
+    for (index, item), result in zip(indexed, results):
+        vulnerabilities = []
+        for brief in result.get("vulns", []):
+            detail = details.get(brief.get("id"), brief)
+            vuln_id = str(detail.get("id", brief.get("id", "")))
+            vulnerabilities.append(
+                Vulnerability(
+                    vuln_id,
+                    [str(alias) for alias in detail.get("aliases", [])],
+                    str(detail.get("summary", "Known vulnerability")),
+                    f"https://osv.dev/vulnerability/{vuln_id}",
+                )
+            )
+        updated[index] = replace(item, scan_status="scanned", vulnerabilities=vulnerabilities)
+    for index, item in enumerate(updated):
+        if not item.locked_version:
+            updated[index] = replace(item, scan_status="missing_version")
+    return updated
+
+
 def _entrypoints(root: Path) -> list[Evidence]:
     patterns = ("run_server.py", "main.py", "server.py", "manage.py", "package.json")
     found: list[Evidence] = []
@@ -329,7 +378,7 @@ def analyze_repository(repo_path: str | Path) -> AnalysisReport:
     files = _files(root)
     pages = _frontend(root, files)
     endpoints = _backend(root, files)
-    components = _components(root)
+    components = _scan_vulnerabilities(_components(root))
     for page in pages:
         for call in page.calls:
             matches = [endpoint for endpoint in endpoints if _template_matches(call.path, endpoint.path)]
@@ -379,6 +428,9 @@ def analyze_repository(repo_path: str | Path) -> AnalysisReport:
             "unresolved_calls": unresolved,
             "business_domains": len(domains),
             "components": len(components),
+            "scanned_components": sum(item.scan_status == "scanned" for item in components),
+            "vulnerable_components": sum(bool(item.vulnerabilities) for item in components),
+            "vulnerabilities": sum(len(item.vulnerabilities) for item in components),
         },
         warnings=warnings,
         generated_at=datetime.now(UTC).isoformat(),
