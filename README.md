@@ -1,55 +1,70 @@
 <div align="center">
-  <picture>
-    <source media="(prefers-color-scheme: dark)" srcset="assets/logo-dark-any.png">
-    <source media="(prefers-color-scheme: light)" srcset="assets/logo-light-any.png">
-    <img src="assets/logo-light-any.png" alt="Code-Graph-RAG Logo" width="480">
-  </picture>
-
+  <h1>BuildProof</h1>
+  <p><strong>Static architecture intelligence connected to a real, auditable runtime.</strong></p>
   <p>
-    <a href="https://trendshift.io/repositories/99619" target="_blank" rel="noopener noreferrer"><img src="https://trendshift.io/api/badge/repositories/99619" alt="vitali87/code-graph-rag | Trendshift" width="250" height="55"/></a>
+    <a href="https://www.chuhaijian.com"><img src="https://img.shields.io/badge/Live-Console-1677ff" alt="BuildProof live console"></a>
+    <a href="https://github.com/tajleonbennis-maker/buildproof/blob/main/LICENSE"><img src="https://img.shields.io/github/license/tajleonbennis-maker/buildproof" alt="License"></a>
+    <a href="https://github.com/tajleonbennis-maker/buildproof/commits/main"><img src="https://img.shields.io/github/last-commit/tajleonbennis-maker/buildproof" alt="Last commit"></a>
   </p>
-
-  <p>
-  <a href="https://github.com/vitali87/code-graph-rag/actions/workflows/ci.yml">
-    <img src="https://img.shields.io/github/actions/workflow/status/vitali87/code-graph-rag/ci.yml?branch=main" alt="CI" />
-  </a>
-  <a href="https://codecov.io/gh/vitali87/code-graph-rag">
-    <img src="https://codecov.io/gh/vitali87/code-graph-rag/graph/badge.svg" alt="Codecov" />
-  </a>
-  <a href="https://sonarcloud.io/summary/overall?id=vitali87_code-graph-rag">
-    <img src="https://sonarcloud.io/api/project_badges/measure?project=vitali87_code-graph-rag&metric=alert_status" alt="Quality Gate Status" />
-  </a>
-  <a href="https://code-graph-rag.com">
-    <img src="https://img.shields.io/badge/Enterprise-Support%20%26%20Services-6366f1" alt="Enterprise Support" />
-  </a>
-  <a href="https://pypi.org/project/code-graph-rag/">
-    <img src="https://img.shields.io/pypi/v/code-graph-rag" alt="PyPI Version" />
-  </a>
-  <a href="https://pepy.tech/projects/code-graph-rag">
-    <img src="https://static.pepy.tech/personalized-badge/code-graph-rag?period=total&units=INTERNATIONAL_SYSTEM&left_color=BLACK&right_color=GREEN&left_text=downloads" alt="PyPI Downloads" />
-  </a>
-  <a href="https://skillsllm.com/security-check/DHsMGRb1Ysys">
-    <img src="https://skillsllm.com/security-check/badge.svg?owner=vitali87&repo=code-graph-rag" alt="SkillsLLM Security Check" />
-  </a>
-  <a href="https://scorecard.dev/viewer/?uri=github.com/vitali87/code-graph-rag">
-    <img src="https://api.scorecard.dev/projects/github.com/vitali87/code-graph-rag/badge" alt="OpenSSF Scorecard" />
-  </a>
-  <a href="https://www.bestpractices.dev/projects/13757">
-    <img src="https://www.bestpractices.dev/projects/13757/badge" alt="OpenSSF Best Practices" />
-  </a>
-</p>
 </div>
 
-# Code-Graph-RAG
+BuildProof turns a source repository into a versioned system model, deploys the
+same commit into an isolated inspection environment, and connects static
+evidence with observed runtime behaviour. It is designed for AI-generated and
+fast-moving Web applications where a file-level scan alone cannot prove what
+was actually shipped or exposed.
 
-Code-Graph-RAG parses a multi-language codebase with Tree-sitter, builds a knowledge graph of its structure in Memgraph, and lets you query, edit, and optimise that code in plain English. It works across a monorepo of mixed languages under one unified graph schema.
+BuildProof is built on the open-source
+[Code-Graph-RAG](https://github.com/vitali87/code-graph-rag) engine. This fork
+retains its multi-language parsing, graph, RAG, MCP, and code intelligence
+capabilities while adding the BuildProof analysis and runtime verification
+product described below.
 
-## BuildProof Web Console
+**Live console:** [www.chuhaijian.com](https://www.chuhaijian.com)
 
-BuildProof is the product-facing system-analysis console for agent-generated
-applications. It automatically maps Web pages to frontend requests and backend
-routes, groups APIs into business domains, and links every conclusion to source
-evidence — no Cypher required.
+## BuildProof Capabilities
+
+- **Versioned repository analysis.** Every saved report records the exact Git
+  commit used for analysis and deployment.
+- **Full-stack route mapping.** Pages, React and Next.js components, browser
+  calls, Next.js handlers, FastAPI routes, WebSockets, SDK calls, and external
+  services are connected into evidence-backed call chains.
+- **Frontend component inventory.** Components are discovered independently of
+  route files, including reusable and indirectly routed UI components.
+- **Attack intelligence manifests.** Machine-readable attack surfaces can be
+  consumed by white-box scanners and security agents without reparsing the
+  repository.
+- **Supply-chain and security evidence.** Dependency versions, source
+  locations, scan status, known vulnerabilities, and affected components are
+  shown together.
+- **Automated monitoring.** Saved repositories can be rescanned on a schedule so
+  the console does not silently retain an obsolete snapshot.
+- **Ephemeral runtime verification.** The analyzed commit can be built in an
+  isolated Docker environment, exposed for inspection, health-probed, and
+  automatically expired.
+- **Runtime evidence ingestion.** Process, file, network, HTTP, deployment, and
+  audit events are normalized and attached to the corresponding static report.
+- **Evidence-first reporting.** Findings link back to files and line numbers;
+  unresolved dynamic behaviour is marked for review instead of guessed.
+
+## Verification Flow
+
+```text
+Git repository
+    -> static analysis + source evidence
+    -> attack manifest + component/API inventory
+    -> build the exact commit in an isolated environment
+    -> health and public reachability probes
+    -> runtime audit events
+    -> one report keyed by repository and commit SHA
+```
+
+The deployment service applies memory and process limits, labels containers
+with the source commit, verifies application health, and reports the public test
+URL back to the console. Runtime environments are intended for authorized,
+temporary inspection, not production hosting.
+
+## Run Locally
 
 ```bash
 uv run buildproof --repo /path/to/agent-built-app
@@ -58,21 +73,45 @@ uv run buildproof --repo /path/to/agent-built-app
 Then open `http://127.0.0.1:8765`. See the
 [BuildProof guide](docs/guide/buildproof.md) for Docker deployment and API use.
 
+Useful integration endpoints:
+
+| Endpoint | Purpose |
+|---|---|
+| `POST /api/analyze` | Analyze and save a repository |
+| `GET /api/projects` | List saved reports |
+| `GET /api/projects/{id}` | Read the complete static report |
+| `GET /api/projects/{id}/attack-manifest` | Read scanner-oriented attack intelligence |
+| `GET /api/projects/{id}/deployment` | Read deployment and commit-verification state |
+| `POST /api/runtime/ingest/{id}` | Ingest authenticated runtime evidence |
+| `GET /api/projects/{id}/runtime` | Read normalized runtime observations |
+
+Public mode accepts public GitHub repositories. Private repositories should be
+checked out by an authorized worker and analyzed without exposing repository
+credentials to the runtime node.
+
 <p align="center">
-  <img src="./assets/demo.gif" alt="demo">
+  <img src="./assets/demo.gif" alt="BuildProof demo">
 </p>
 
-## Latest News 🔥
+## BuildProof Development
 
-<!-- SECTION:latest_news -->
-- **Java Taint Improvements**: Enhanced taint tracking in Java, including handling JDK shims, chained call receivers, literal arguments, and type-test patterns.
-- **C# Taint Propagation**: Improved taint propagation in C# with refinements to argument binding, tuple deconstruction, and await plumbing methods.
-- **Semantic Frontend Enhancements**: Added in-process Jedi semantic frontend for Python and re-run semantic frontends on the watch path for more accurate analysis.
-- **Protocol Buffer Indexing**: Introduced a canonical protobuf index with provenance manifest and a verify command for improved data integrity.
-- **Structural Analysis**: Added structural snapshot diffs between protobuf indexes and structural ast-grep support for seven additional languages.
-<!-- /SECTION:latest_news -->
+- Automated exact-commit deployment and public health verification.
+- Runtime audit collection and evidence relay from the isolated inspection node.
+- Scheduled rescanning for monitored repositories.
+- Scanner-oriented attack manifests, security evidence views, and Shannon
+  surface deduplication.
+- Expanded Next.js, FastAPI, Supabase, frontend component, monorepo dependency,
+  and full-stack call-chain analysis.
 
-See [NEWS.md](NEWS.md) for the full history.
+See the [commit history](https://github.com/tajleonbennis-maker/buildproof/commits/main)
+for implementation details. Upstream Code-Graph-RAG release notes remain in
+[NEWS.md](NEWS.md).
+
+## Code-Graph-RAG Engine
+
+The underlying Code-Graph-RAG engine parses multi-language codebases with
+Tree-sitter, builds a knowledge graph in Memgraph, and supports natural-language
+querying, editing, and optimization across mixed-language monorepos.
 
 ## What It Does
 
