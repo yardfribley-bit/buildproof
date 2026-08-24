@@ -159,23 +159,39 @@ def _literal(node: ast.AST | None) -> str | None:
 
 def _router_mounts(root: Path) -> dict[str, tuple[str, str]]:
     mounts: dict[str, tuple[str, str]] = {}
+    constants: dict[str, str] = {}
+    python_files = [path for path in root.rglob("*.py") if not any(part in IGNORED_PARTS for part in path.parts)]
+    for path in python_files:
+        for name, value in re.findall(r"^\s*([A-Z][A-Z0-9_]*)[^=\n]*=\s*[\"']([^\"']+)", _read(path), re.MULTILINE):
+            constants[name] = value
+    root_prefixes: set[str] = set()
     pattern = re.compile(
-        r"[\w_]+\.include_router\(\s*([\w_.]+)\s*,(.*?)\)", re.DOTALL
+        r"([\w_]+)\.include_router\(\s*([\w_.]+)\s*,(.*?)\)", re.DOTALL
     )
-    for path in root.rglob("*.py"):
-        if any(part in IGNORED_PARTS for part in path.parts):
-            continue
+    for path in python_files:
         for match in pattern.finditer(_read(path)):
-            body = match.group(2)
+            receiver, expression, body = match.groups()
             prefix = re.search(r"prefix\s*=\s*[\"']([^\"']+)", body)
+            prefix_value = prefix.group(1) if prefix else ""
+            if not prefix_value:
+                prefix_expression = re.search(r"prefix\s*=\s*([\w.]+)", body)
+                if prefix_expression:
+                    prefix_value = constants.get(prefix_expression.group(1).split(".")[-1], "")
             dependencies = "admin" if "_admin" in body or "require_admin" in body else "authenticated"
-            expression = match.group(1)
             if expression.endswith(".router"):
                 module = expression.split(".")[-2]
             else:
                 module = expression.split(".")[-1].removesuffix("_router")
             if module != "router":
-                mounts[module] = (prefix.group(1) if prefix else "", dependencies)
+                mounts[module] = (prefix_value, dependencies)
+            if receiver == "app" and prefix_value:
+                root_prefixes.add(prefix_value)
+    if len(root_prefixes) == 1:
+        root_prefix = next(iter(root_prefixes))
+        mounts = {
+            module: (prefix if prefix.startswith(root_prefix) else root_prefix + prefix, auth)
+            for module, (prefix, auth) in mounts.items()
+        }
     return mounts
 
 
