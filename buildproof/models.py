@@ -92,6 +92,7 @@ class AnalysisReport:
     stats: dict[str, int]
     warnings: list[str]
     generated_at: str
+    attack_manifest: dict[str, Any] = field(default_factory=dict)
 
     def to_dict(self) -> dict[str, Any]:
         return asdict(self)

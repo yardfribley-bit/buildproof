@@ -12,6 +12,7 @@ from dataclasses import replace
 from datetime import UTC, datetime
 from pathlib import Path
 
+from .attack_manifest import build_attack_manifest
 from .models import (
     AnalysisReport,
     BusinessDomain,
@@ -559,7 +560,8 @@ def analyze_repository(repo_path: str | Path) -> AnalysisReport:
         warnings.append(
             f"{unresolved} client request(s) could not be matched to a backend route."
         )
-    return AnalysisReport(
+    generated_at = datetime.now(UTC).isoformat()
+    report = AnalysisReport(
         project=root.name,
         root=str(root),
         technologies=_technologies(root),
@@ -589,5 +591,7 @@ def analyze_repository(repo_path: str | Path) -> AnalysisReport:
             "vulnerabilities": sum(len(item.vulnerabilities) for item in components),
         },
         warnings=warnings,
-        generated_at=datetime.now(UTC).isoformat(),
+        generated_at=generated_at,
     )
+    report.attack_manifest = build_attack_manifest(root, report.project, str(root), generated_at, relations)
+    return report

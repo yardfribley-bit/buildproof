@@ -99,6 +99,44 @@ def test_maps_frontend_supabase_sdk_to_external_backend(tmp_path: Path) -> None:
     }
 
 
+def test_generates_shannon_attack_manifest_with_candidate_and_evidence(tmp_path: Path) -> None:
+    _write(tmp_path / "web/app/users/page.tsx", 'fetch("/api/users/${id}");\n')
+    _write(
+        tmp_path / "backend/users.py",
+        'router = APIRouter(prefix="/api/users")\n'
+        '@router.get("/{user_id}")\n'
+        'async def get_user(user_id):\n'
+        '    return db.execute("select * from users where id=" + user_id)\n',
+    )
+
+    report = analyze_repository(tmp_path)
+    manifest = report.attack_manifest
+
+    assert manifest["schema_version"] == "buildproof.attack-manifest.v1"
+    surface = manifest["attack_surfaces"][0]
+    assert {item["type"] for item in surface["hypotheses"]} == {"idor", "sql-injection"}
+    assert surface["sinks"][0]["evidence"]["path"] == "backend/users.py"
+    assert all(item["status"] == "candidate" for item in surface["hypotheses"])
+
+
+def test_attack_manifest_api_is_machine_readable(tmp_path: Path) -> None:
+    previous = os.environ.get("BUILDPROOF_DATA")
+    os.environ["BUILDPROOF_DATA"] = str(tmp_path / "data")
+    _write(tmp_path / "repo/web/app/page.tsx", 'fetch("/api/status");\n')
+    try:
+        with TestClient(create_app()) as client:
+            analyzed = client.post("/api/analyze", json={"repo": str(tmp_path / "repo")}).json()
+            response = client.get(f"/api/projects/{analyzed['id']}/attack-manifest")
+    finally:
+        if previous is None:
+            os.environ.pop("BUILDPROOF_DATA", None)
+        else:
+            os.environ["BUILDPROOF_DATA"] = previous
+
+    assert response.status_code == 200
+    assert response.json()["schema_version"] == "buildproof.attack-manifest.v1"
+
+
 def test_analysis_api_returns_evidence_report(tmp_path: Path) -> None:
     _write(tmp_path / "web/app/page.tsx", 'fetch("/api/v1/status");\n')
     _write(

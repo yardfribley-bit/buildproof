@@ -110,6 +110,7 @@ def _analyze(repo: str) -> dict[str, object]:
         report = analyze_repository(path).to_dict()
         if _public_mode():
             report["root"] = source
+            report["attack_manifest"]["source"] = source
         return _save_report(report)
     finally:
         if temporary_repository:
@@ -171,6 +172,20 @@ async def saved_report(request: Request) -> JSONResponse:
     return JSONResponse(json.loads(path.read_text(encoding="utf-8")))
 
 
+async def attack_manifest(request: Request) -> JSONResponse:
+    report_id = request.path_params["report_id"].lower()
+    if not re.fullmatch(r"[a-z0-9_.-]+", report_id):
+        return JSONResponse({"error": "Invalid report id."}, status_code=400)
+    path = _reports_root() / f"{report_id}.json"
+    if not path.is_file():
+        return JSONResponse({"error": "Report not found."}, status_code=404)
+    report = json.loads(path.read_text(encoding="utf-8"))
+    manifest = report.get("attack_manifest")
+    if not manifest:
+        return JSONResponse({"error": "Re-analyze this project to generate an attack manifest."}, status_code=409)
+    return JSONResponse(manifest)
+
+
 def create_app() -> Starlette:
     return Starlette(
         debug=False,
@@ -182,6 +197,7 @@ def create_app() -> Starlette:
             Route("/api/analyze", analyze, methods=["GET", "POST"]),
             Route("/api/projects", history),
             Route("/api/projects/{report_id}", saved_report),
+            Route("/api/projects/{report_id}/attack-manifest", attack_manifest),
         ],
     )
 
