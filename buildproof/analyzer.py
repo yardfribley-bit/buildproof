@@ -160,7 +160,7 @@ def _literal(node: ast.AST | None) -> str | None:
 def _router_mounts(root: Path) -> dict[str, tuple[str, str]]:
     mounts: dict[str, tuple[str, str]] = {}
     pattern = re.compile(
-        r"app\.include_router\(\s*([\w_]+)\.router\s*,(.*?)\)", re.DOTALL
+        r"[\w_]+\.include_router\(\s*([\w_.]+)\s*,(.*?)\)", re.DOTALL
     )
     for path in root.rglob("*.py"):
         if any(part in IGNORED_PARTS for part in path.parts):
@@ -169,7 +169,13 @@ def _router_mounts(root: Path) -> dict[str, tuple[str, str]]:
             body = match.group(2)
             prefix = re.search(r"prefix\s*=\s*[\"']([^\"']+)", body)
             dependencies = "admin" if "_admin" in body or "require_admin" in body else "authenticated"
-            mounts[match.group(1)] = (prefix.group(1) if prefix else "", dependencies)
+            expression = match.group(1)
+            if expression.endswith(".router"):
+                module = expression.split(".")[-2]
+            else:
+                module = expression.split(".")[-1].removesuffix("_router")
+            if module != "router":
+                mounts[module] = (prefix.group(1) if prefix else "", dependencies)
     return mounts
 
 
@@ -190,6 +196,11 @@ def _backend(root: Path, files: list[Path]) -> list[Endpoint]:
         prefix, default_auth = mounts.get(
             module, ("", "public" if path.name in {"main.py", "app.py"} else "authenticated")
         )
+        router_declaration = re.search(r"router\s*=\s*APIRouter\((.*?)\)", text, re.DOTALL)
+        if router_declaration:
+            local_prefix = re.search(r"prefix\s*=\s*[\"']([^\"']+)", router_declaration.group(1))
+            if local_prefix and not prefix.endswith(local_prefix.group(1)):
+                prefix += local_prefix.group(1)
         lines = text.splitlines()
         for node in ast.walk(tree):
             if not isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):

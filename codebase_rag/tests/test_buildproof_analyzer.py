@@ -183,3 +183,20 @@ def test_resolves_exact_npm_versions_from_pnpm_workspace_lock(tmp_path: Path) ->
 
     assert locked["next"] == "16.2.3"
     assert locked["@scope/ui"] == "2.4.1"
+
+
+def test_resolves_aliased_router_and_local_prefix(tmp_path: Path) -> None:
+    _write(
+        tmp_path / "backend/routes/agents.py",
+        'router = APIRouter(prefix="/agents")\n@router.get("/{agent_id}")\nasync def get_agent(): pass\n',
+    )
+    _write(
+        tmp_path / "backend/main.py",
+        'from .routes.agents import router as agents_router\napp.include_router(agents_router, prefix="/api/v1")\n',
+    )
+    _write(tmp_path / "frontend/app/page.tsx", 'fetch("/api/v1/agents/42");\n')
+
+    report = analyze_repository(tmp_path)
+
+    assert report.endpoints[0].path == "/api/v1/agents/:param"
+    assert report.stats["mapped_calls"] == 1
