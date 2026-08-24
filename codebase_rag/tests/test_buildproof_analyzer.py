@@ -134,3 +134,14 @@ def test_extracts_direct_supply_chain_components(tmp_path: Path) -> None:
     locked = {item.name: item.locked_version for item in report.components}
     assert locked["eslint"] == "9.22.0"
     assert all(item.scan_status == "not_scanned" for item in report.components)
+
+
+def test_article_library_and_article_are_served() -> None:
+    with TestClient(create_app()) as client:
+        library = client.get("/articles")
+        article = client.get("/articles/agent-code-acceptance")
+
+    assert library.status_code == 200
+    assert "文章与研究" in library.text
+    assert article.status_code == 200
+    assert "Agent 开始写完整系统" in article.text

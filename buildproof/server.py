@@ -121,6 +121,18 @@ async def asset(request: Request) -> FileResponse:
     return FileResponse(STATIC_ROOT / name)
 
 
+async def articles(_request: Request) -> FileResponse:
+    return FileResponse(STATIC_ROOT / "articles.html")
+
+
+async def article(request: Request) -> FileResponse:
+    slug = request.path_params["slug"]
+    path = STATIC_ROOT / "articles" / f"{slug}.html"
+    if not re.fullmatch(r"[a-z0-9-]+", slug) or not path.is_file():
+        return FileResponse(STATIC_ROOT / "articles.html", status_code=404)
+    return FileResponse(path)
+
+
 async def analyze(request: Request) -> JSONResponse:
     if request.method == "POST":
         payload = await request.json()
@@ -158,6 +170,8 @@ def create_app() -> Starlette:
         routes=[
             Route("/", index),
             Route("/assets/{name}", asset),
+            Route("/articles", articles),
+            Route("/articles/{slug}", article),
             Route("/api/analyze", analyze, methods=["GET", "POST"]),
             Route("/api/projects", history),
             Route("/api/projects/{report_id}", saved_report),
