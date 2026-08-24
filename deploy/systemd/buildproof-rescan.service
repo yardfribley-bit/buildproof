@@ -1,0 +1,20 @@
+[Unit]
+Description=Re-analyze every monitored BuildProof repository
+After=network-online.target buildproof.service
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+WorkingDirectory=/opt/buildproof
+Environment=PYTHONPATH=/opt/buildproof
+Environment=BUILDPROOF_PUBLIC=true
+Environment=BUILDPROOF_OSV=true
+Environment=BUILDPROOF_DATA=/var/lib/buildproof
+ExecStart=/opt/buildproof/.venv/bin/python -m buildproof.rescan
+User=root
+Nice=10
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=full
+ReadWritePaths=/var/lib/buildproof
+

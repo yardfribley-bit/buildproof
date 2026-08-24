@@ -1,0 +1,11 @@
+[Unit]
+Description=Daily BuildProof monitored-repository rescan
+
+[Timer]
+OnCalendar=daily
+Persistent=true
+RandomizedDelaySec=30m
+Unit=buildproof-rescan.service
+
+[Install]
+WantedBy=timers.target
