@@ -114,6 +114,10 @@ def test_extracts_direct_supply_chain_components(tmp_path: Path) -> None:
         tmp_path / "web/package.json",
         json.dumps({"dependencies": {"next": "16.2.3"}, "devDependencies": {"eslint": "^9.0.0"}}),
     )
+    _write(
+        tmp_path / "web/package-lock.json",
+        json.dumps({"lockfileVersion": 3, "packages": {"node_modules/next": {"version": "16.2.3"}, "node_modules/eslint": {"version": "9.22.0"}}}),
+    )
     _write(tmp_path / "requirements.txt", "fastapi==0.116.1\nuvicorn>=0.35\n")
 
     report = analyze_repository(tmp_path)
@@ -127,3 +131,5 @@ def test_extracts_direct_supply_chain_components(tmp_path: Path) -> None:
     assert layers["next"] == "前端"
     assert layers["eslint"] == "工程工具"
     assert layers["fastapi"] == "后端"
+    locked = {item.name: item.locked_version for item in report.components}
+    assert locked["eslint"] == "9.22.0"

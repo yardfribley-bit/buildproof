@@ -48,6 +48,7 @@ class BusinessDomain:
 class Component:
     name: str
     version: str
+    locked_version: str
     ecosystem: str
     layer: str
     scope: str

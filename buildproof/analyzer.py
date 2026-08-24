@@ -253,11 +253,21 @@ def _components(root: Path) -> list[Component]:
             package = json.loads(_read(path))
         except json.JSONDecodeError:
             continue
+        lock_path = path.with_name("package-lock.json")
+        try:
+            lock = json.loads(_read(lock_path)) if lock_path.is_file() else {}
+        except json.JSONDecodeError:
+            lock = {}
+        locked_packages = lock.get("packages", {})
+        legacy_dependencies = lock.get("dependencies", {})
         for scope in ("dependencies", "devDependencies", "peerDependencies", "optionalDependencies"):
             for name, version in package.get(scope, {}).items():
                 if isinstance(version, str):
                     layer = "工程工具" if scope == "devDependencies" else "前端"
-                    item = Component(name, version, "npm", layer, scope, _evidence(path, root, 1, f'"{name}": "{version}"'))
+                    locked = locked_packages.get(f"node_modules/{name}", {}).get("version", "")
+                    locked = locked or legacy_dependencies.get(name, {}).get("version", "")
+                    evidence_path = lock_path if locked else path
+                    item = Component(name, version, locked, "npm", layer, scope, _evidence(evidence_path, root, 1, f'"{name}": "{locked or version}"'))
                     found.setdefault(("npm", name.lower()), item)
     for path in root.rglob("pyproject.toml"):
         if any(part in IGNORED_PARTS for part in path.parts):
@@ -274,7 +284,7 @@ def _components(root: Path) -> list[Component]:
                 if match:
                     name, version = match.group(1), match.group(2).strip() or "unspecified"
                     layer = "工程工具" if scope.startswith("optional:") and any(word in scope for word in ("test", "dev", "lint")) else "后端"
-                    item = Component(name, version, "PyPI", layer, scope, _evidence(path, root, 1, str(value)))
+                    item = Component(name, version, "", "PyPI", layer, scope, _evidence(path, root, 1, str(value)))
                     found.setdefault(("pypi", name.lower()), item)
     requirement = re.compile(r"^\s*([A-Za-z0-9_.-]+(?:\[[^]]+])?)\s*([^;\s#]*)")
     for path in root.rglob("requirements*.txt"):
@@ -286,7 +296,8 @@ def _components(root: Path) -> list[Component]:
             match = requirement.match(line)
             if match:
                 name, version = match.group(1), match.group(2) or "unspecified"
-                item = Component(name, version, "PyPI", "后端", "requirements", _evidence(path, root, line_number, line))
+                locked = version.removeprefix("==") if version.startswith("==") else ""
+                item = Component(name, version, locked, "PyPI", "后端", "requirements", _evidence(path, root, line_number, line))
                 found.setdefault(("pypi", name.lower()), item)
     return sorted(found.values(), key=lambda item: (item.ecosystem, item.name.lower()))
 
