@@ -39,6 +39,11 @@ API_LITERAL = re.compile(r"[\"'`](/(?:api|ws)(?:/[^\"'`\s]*)?)[\"'`]")
 IMPORT_RE = re.compile(
     r"(?:from\s+|import\s*(?:[^\"']+?\s+from\s+)?)[\"']([^\"']+)[\"']"
 )
+SUPABASE_CALLS = (
+    re.compile(r"\b(?:supabase|client)\s*\.\s*auth\s*\.\s*([A-Za-z_$][\w$]*)"),
+    re.compile(r"\b(?:supabase|client)\s*\.\s*from\(\s*[\"']([^\"']+)[\"']\s*\)"),
+    re.compile(r"\b(?:supabase|client)\s*\.\s*storage\s*\.\s*from\(\s*[\"']([^\"']+)[\"']\s*\)"),
+)
 
 
 def _files(root: Path) -> list[Path]:
@@ -158,6 +163,18 @@ def _frontend(root: Path, files: list[Path]) -> list[WebSurface]:
             direct_calls[path].append(
                 ClientCall(literal, transport, _evidence(path, root, line, lines[line - 1]))
             )
+        if "supabase" in text.lower() or "createClient" in text:
+            kinds = ("auth", "table", "storage")
+            for kind, pattern in zip(kinds, SUPABASE_CALLS):
+                for match in pattern.finditer(text):
+                    line = text.count("\n", 0, match.start()) + 1
+                    direct_calls[path].append(
+                        ClientCall(
+                            f"supabase://{kind}/{match.group(1)}",
+                            "sdk",
+                            _evidence(path, root, line, lines[line - 1]),
+                        )
+                    )
         for spec in IMPORT_RE.findall(text):
             resolved = _resolve_import(path, spec, root, candidate_set)
             if resolved:
@@ -296,6 +313,20 @@ def _backend(root: Path, files: list[Path]) -> list[Endpoint]:
                     )
                 )
     return sorted(endpoints, key=lambda item: (item.path, item.method))
+
+
+def _external_service_endpoints(pages: list[WebSurface]) -> list[Endpoint]:
+    found: dict[str, Endpoint] = {}
+    for page in pages:
+        for call in page.calls:
+            if call.transport != "sdk" or "://" not in call.path:
+                continue
+            service, operation = call.path.split("://", 1)
+            found.setdefault(
+                call.path,
+                Endpoint("SDK", call.path, operation.replace("/", "."), "provider-managed", "sdk", call.evidence, f"external-{service}"),
+            )
+    return sorted(found.values(), key=lambda item: item.path)
 
 
 def _technologies(root: Path) -> list[str]:
@@ -480,13 +511,14 @@ def analyze_repository(repo_path: str | Path) -> AnalysisReport:
     pages = _frontend(root, files)
     backend_endpoints = _backend(root, files)
     next_endpoints, next_downstream = _next_route_endpoints(root, files)
-    endpoints = next_endpoints + backend_endpoints
+    external_endpoints = _external_service_endpoints(pages)
+    endpoints = next_endpoints + backend_endpoints + external_endpoints
     components = _scan_vulnerabilities(_components(root))
     relations: list[CallRelation] = []
     for page in pages:
         for call in page.calls:
             api_matches = [endpoint for endpoint in next_endpoints if _template_matches(call.path, endpoint.path)]
-            direct_matches = [endpoint for endpoint in backend_endpoints if _template_matches(call.path, endpoint.path)]
+            direct_matches = [endpoint for endpoint in backend_endpoints + external_endpoints if _template_matches(call.path, endpoint.path)]
             if api_matches:
                 page.endpoints.extend(api_matches)
                 for api in api_matches:

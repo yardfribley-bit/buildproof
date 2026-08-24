@@ -81,6 +81,24 @@ def test_builds_frontend_next_api_backend_relation(tmp_path: Path) -> None:
     assert report.stats["mapped_calls"] == 1
 
 
+def test_maps_frontend_supabase_sdk_to_external_backend(tmp_path: Path) -> None:
+    _write(
+        tmp_path / "web/app/account/page.tsx",
+        'const supabase = createClient();\nawait supabase.auth.signOut();\n'
+        'await supabase.from("profiles").update(values);\n',
+    )
+
+    report = analyze_repository(tmp_path)
+
+    assert report.stats["client_calls"] == 2
+    assert report.stats["mapped_calls"] == 2
+    assert {item.backend.layer for item in report.relations if item.backend} == {"external-supabase"}
+    assert {item.call.path for item in report.relations} == {
+        "supabase://auth/signOut",
+        "supabase://table/profiles",
+    }
+
+
 def test_analysis_api_returns_evidence_report(tmp_path: Path) -> None:
     _write(tmp_path / "web/app/page.tsx", 'fetch("/api/v1/status");\n')
     _write(
