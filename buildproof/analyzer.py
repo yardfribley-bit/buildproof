@@ -207,7 +207,14 @@ def _backend(root: Path, files: list[Path]) -> list[Endpoint]:
         try:
             tree = ast.parse(text)
         except SyntaxError:
-            continue
+            sanitized = "\n".join(
+                "" if line.lstrip().startswith(("{%", "{%-", "{{")) else line
+                for line in text.splitlines()
+            )
+            try:
+                tree = ast.parse(sanitized)
+            except SyntaxError:
+                continue
         module = path.stem
         prefix, default_auth = mounts.get(
             module, ("", "public" if path.name in {"main.py", "app.py"} else "authenticated")

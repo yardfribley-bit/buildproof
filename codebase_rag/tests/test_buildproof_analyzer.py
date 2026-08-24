@@ -222,3 +222,16 @@ def test_propagates_constant_global_api_prefix(tmp_path: Path) -> None:
 
     assert report.endpoints[0].path == "/api/v1/users/me"
     assert report.stats["mapped_calls"] == 1
+
+
+def test_parses_fastapi_routes_inside_cookiecutter_templates(tmp_path: Path) -> None:
+    _write(
+        tmp_path / "backend/users.py",
+        '{%- if cookiecutter.use_auth %}\nrouter = APIRouter(prefix="/api/users")\n@router.get("/me")\nasync def me(): pass\n{% endif %}\n',
+    )
+    _write(tmp_path / "frontend/app/page.tsx", 'fetch("/api/users/me");\n')
+
+    report = analyze_repository(tmp_path)
+
+    assert report.endpoints[0].handler == "me"
+    assert report.stats["mapped_calls"] == 1
