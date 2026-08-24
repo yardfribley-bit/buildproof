@@ -49,6 +49,7 @@ class Component:
     name: str
     version: str
     ecosystem: str
+    layer: str
     scope: str
     evidence: Evidence
 

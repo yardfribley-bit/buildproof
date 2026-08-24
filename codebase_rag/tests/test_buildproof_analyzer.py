@@ -123,3 +123,7 @@ def test_extracts_direct_supply_chain_components(tmp_path: Path) -> None:
     assert components[("npm", "eslint")] == "^9.0.0"
     assert components[("PyPI", "fastapi")] == "==0.116.1"
     assert report.stats["components"] == 4
+    layers = {item.name: item.layer for item in report.components}
+    assert layers["next"] == "前端"
+    assert layers["eslint"] == "工程工具"
+    assert layers["fastapi"] == "后端"

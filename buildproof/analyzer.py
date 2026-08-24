@@ -256,7 +256,8 @@ def _components(root: Path) -> list[Component]:
         for scope in ("dependencies", "devDependencies", "peerDependencies", "optionalDependencies"):
             for name, version in package.get(scope, {}).items():
                 if isinstance(version, str):
-                    item = Component(name, version, "npm", scope, _evidence(path, root, 1, f'"{name}": "{version}"'))
+                    layer = "工程工具" if scope == "devDependencies" else "前端"
+                    item = Component(name, version, "npm", layer, scope, _evidence(path, root, 1, f'"{name}": "{version}"'))
                     found.setdefault(("npm", name.lower()), item)
     for path in root.rglob("pyproject.toml"):
         if any(part in IGNORED_PARTS for part in path.parts):
@@ -272,7 +273,8 @@ def _components(root: Path) -> list[Component]:
                 match = re.match(r"\s*([A-Za-z0-9_.-]+(?:\[[^]]+])?)\s*(.*)", str(value))
                 if match:
                     name, version = match.group(1), match.group(2).strip() or "unspecified"
-                    item = Component(name, version, "PyPI", scope, _evidence(path, root, 1, str(value)))
+                    layer = "工程工具" if scope.startswith("optional:") and any(word in scope for word in ("test", "dev", "lint")) else "后端"
+                    item = Component(name, version, "PyPI", layer, scope, _evidence(path, root, 1, str(value)))
                     found.setdefault(("pypi", name.lower()), item)
     requirement = re.compile(r"^\s*([A-Za-z0-9_.-]+(?:\[[^]]+])?)\s*([^;\s#]*)")
     for path in root.rglob("requirements*.txt"):
@@ -284,7 +286,7 @@ def _components(root: Path) -> list[Component]:
             match = requirement.match(line)
             if match:
                 name, version = match.group(1), match.group(2) or "unspecified"
-                item = Component(name, version, "PyPI", "requirements", _evidence(path, root, line_number, line))
+                item = Component(name, version, "PyPI", "后端", "requirements", _evidence(path, root, line_number, line))
                 found.setdefault(("pypi", name.lower()), item)
     return sorted(found.values(), key=lambda item: (item.ecosystem, item.name.lower()))
 
