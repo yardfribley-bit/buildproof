@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import os
 from pathlib import Path
 
 from starlette.testclient import TestClient
@@ -70,3 +71,19 @@ def test_analysis_api_returns_evidence_report(tmp_path: Path) -> None:
     payload = response.json()
     assert payload["stats"]["mapped_calls"] == 1
     assert payload["pages"][0]["endpoints"][0]["evidence"]["line"] == 2
+
+
+def test_public_mode_rejects_local_paths(tmp_path: Path) -> None:
+    previous = os.environ.get("BUILDPROOF_PUBLIC")
+    os.environ["BUILDPROOF_PUBLIC"] = "true"
+    try:
+        with TestClient(create_app()) as client:
+            response = client.post("/api/analyze", json={"repo": str(tmp_path)})
+    finally:
+        if previous is None:
+            os.environ.pop("BUILDPROOF_PUBLIC", None)
+        else:
+            os.environ["BUILDPROOF_PUBLIC"] = previous
+
+    assert response.status_code == 400
+    assert "GitHub" in response.json()["error"]
