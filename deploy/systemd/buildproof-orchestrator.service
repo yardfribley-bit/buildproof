@@ -1,0 +1,21 @@
+[Unit]
+Description=BuildProof ephemeral deployment orchestrator
+After=network-online.target docker.service
+Requires=docker.service
+
+[Service]
+Type=simple
+EnvironmentFile=/etc/buildproof-surface.env
+Environment=DOCKER_CONFIG=/var/lib/buildproof-surface/docker-config
+ExecStart=/usr/bin/python3 /opt/buildproof-surface/deployment_orchestrator.py
+Restart=always
+RestartSec=3
+User=root
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectHome=true
+ProtectSystem=full
+ReadWritePaths=/var/lib/buildproof-surface /var/lib/docker /run/docker.sock
+
+[Install]
+WantedBy=multi-user.target

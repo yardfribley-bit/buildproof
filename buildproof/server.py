@@ -18,6 +18,7 @@ from starlette.responses import FileResponse, JSONResponse
 from starlette.routing import Route
 
 from .analyzer import analyze_repository
+from .deployment import deployment_status, trigger_deployment
 from .runtime_audit import MAX_BATCH_BYTES, append_events, parse_batch, runtime_summary
 
 STATIC_ROOT = Path(__file__).with_name("static")
@@ -73,7 +74,7 @@ def _history() -> list[dict[str, object]]:
     return sorted(projects, key=lambda item: str(item["generated_at"]), reverse=True)
 
 
-def _prepare_public_repository(value: str) -> tuple[Path, str]:
+def _prepare_public_repository(value: str) -> tuple[Path, str, str]:
     match = GITHUB_REPO.fullmatch(value.strip())
     if not match:
         raise ValueError("请输入公开 GitHub 仓库地址，例如 https://github.com/owner/repo")
@@ -105,14 +106,18 @@ def _prepare_public_repository(value: str) -> tuple[Path, str]:
     if size > 500 * 1024 * 1024:
         shutil.rmtree(target, ignore_errors=True)
         raise ValueError("仓库超过 500 MB，暂不支持在线分析。")
-    return target, f"https://github.com/{slug}"
+    commit = subprocess.run(
+        ["git", "rev-parse", "HEAD"], cwd=target, check=True, capture_output=True, text=True, timeout=10
+    ).stdout.strip()
+    return target, f"https://github.com/{slug}", commit
 
 
 def _analyze(repo: str) -> dict[str, object]:
     source = repo
+    source_commit = ""
     temporary_repository = False
     if _public_mode():
-        path, source = _prepare_public_repository(repo)
+        path, source, source_commit = _prepare_public_repository(repo)
         temporary_repository = True
     else:
         path = Path(repo).expanduser().resolve()
@@ -120,8 +125,13 @@ def _analyze(repo: str) -> dict[str, object]:
         report = analyze_repository(path).to_dict()
         if _public_mode():
             report["root"] = source
+            report["source_commit"] = source_commit
             report["attack_manifest"]["source"] = source
-        return _save_report(report)
+        saved = _save_report(report)
+        if _public_mode():
+            saved["deployment"] = trigger_deployment(saved)
+            saved = _save_report(saved)
+        return saved
     finally:
         if temporary_repository:
             shutil.rmtree(path, ignore_errors=True)
@@ -209,6 +219,13 @@ async def project_runtime(request: Request) -> JSONResponse:
     return JSONResponse(runtime_summary(_runtime_root(), report_id))
 
 
+async def project_deployment(request: Request) -> JSONResponse:
+    report_id = request.path_params["report_id"].lower()
+    if not re.fullmatch(r"[a-z0-9_.-]+", report_id):
+        return JSONResponse({"error": "Invalid report id."}, status_code=400)
+    return JSONResponse(await run_in_threadpool(deployment_status, report_id))
+
+
 async def saved_report(request: Request) -> JSONResponse:
     report_id = request.path_params["report_id"].lower()
     if not re.fullmatch(r"[a-z0-9_.-]+", report_id):
@@ -248,6 +265,7 @@ def create_app() -> Starlette:
             Route("/api/projects/{report_id}", saved_report),
             Route("/api/projects/{report_id}/attack-manifest", attack_manifest),
             Route("/api/projects/{report_id}/runtime", project_runtime),
+            Route("/api/projects/{report_id}/deployment", project_deployment),
         ],
     )
 

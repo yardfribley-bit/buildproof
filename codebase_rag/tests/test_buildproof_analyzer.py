@@ -7,6 +7,7 @@ from pathlib import Path
 from starlette.testclient import TestClient
 
 from buildproof import analyze_repository, rescan
+from buildproof import deployment as deployment_module
 from buildproof.server import create_app
 
 
@@ -252,6 +253,28 @@ def test_runtime_ingest_requires_token_and_returns_redacted_summary(tmp_path: Pa
     assert summary.json()["status"] == "observing"
     assert summary.json()["alerts"] == 1
     assert "raw_secret" not in json.dumps(summary.json())
+
+
+def test_dynamic_deployment_requires_exact_commit(monkeypatch) -> None:
+    calls: list[tuple[str, str, dict[str, str]]] = []
+
+    def fake_request(method: str, path: str, payload: dict[str, str]) -> dict[str, str]:
+        calls.append((method, path, payload))
+        return {"status": "queued"}
+
+    monkeypatch.setattr(deployment_module, "_request", fake_request)
+    missing = deployment_module.trigger_deployment({"id": "owner--repo", "root": "https://github.com/owner/repo"})
+    queued = deployment_module.trigger_deployment({
+        "id": "owner--repo",
+        "root": "https://github.com/owner/repo",
+        "source_commit": "a" * 40,
+    })
+
+    assert missing["status"] == "not_requested"
+    assert queued["status"] == "queued"
+    assert calls == [("POST", "/jobs", {
+        "report_id": "owner--repo", "repo": "https://github.com/owner/repo", "commit": "a" * 40,
+    })]
 
 
 def test_analysis_api_returns_evidence_report(tmp_path: Path) -> None:
