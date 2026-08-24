@@ -100,14 +100,20 @@ def _prepare_public_repository(value: str) -> tuple[Path, str]:
 
 def _analyze(repo: str) -> dict[str, object]:
     source = repo
+    temporary_repository = False
     if _public_mode():
         path, source = _prepare_public_repository(repo)
+        temporary_repository = True
     else:
         path = Path(repo).expanduser().resolve()
-    report = analyze_repository(path).to_dict()
-    if _public_mode():
-        report["root"] = source
-    return _save_report(report)
+    try:
+        report = analyze_repository(path).to_dict()
+        if _public_mode():
+            report["root"] = source
+        return _save_report(report)
+    finally:
+        if temporary_repository:
+            shutil.rmtree(path, ignore_errors=True)
 
 
 async def index(_request: Request) -> FileResponse:
