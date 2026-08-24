@@ -166,3 +166,20 @@ def test_discovers_non_deeptutor_next_and_fastapi_layouts(tmp_path: Path) -> Non
     assert report.pages[0].route == "/dashboard"
     assert report.endpoints[0].path == "/api/items"
     assert report.pages[0].endpoints[0].handler == "list_items"
+
+
+def test_resolves_exact_npm_versions_from_pnpm_workspace_lock(tmp_path: Path) -> None:
+    _write(
+        tmp_path / "apps/web/package.json",
+        json.dumps({"dependencies": {"next": "^16.0.0", "@scope/ui": "^2.0.0"}}),
+    )
+    _write(
+        tmp_path / "pnpm-lock.yaml",
+        "lockfileVersion: '9.0'\npackages:\n  next@16.2.3:\n    resolution: {}\n  '@scope/ui@2.4.1':\n    resolution: {}\n",
+    )
+
+    report = analyze_repository(tmp_path)
+    locked = {item.name: item.locked_version for item in report.components}
+
+    assert locked["next"] == "16.2.3"
+    assert locked["@scope/ui"] == "2.4.1"

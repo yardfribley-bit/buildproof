@@ -254,6 +254,31 @@ def _technologies(root: Path) -> list[str]:
 
 def _components(root: Path) -> list[Component]:
     found: dict[tuple[str, str], Component] = {}
+    workspace_locks: dict[str, tuple[str, Path]] = {}
+    for lock_path in root.rglob("pnpm-lock.yaml"):
+        if any(part in IGNORED_PARTS for part in lock_path.parts):
+            continue
+        section = ""
+        versions: dict[str, set[str]] = defaultdict(set)
+        for line in _read(lock_path).splitlines():
+            if line and not line.startswith(" "):
+                section = line.rstrip(":")
+                continue
+            if section not in {"packages", "snapshots"}:
+                continue
+            match = re.match(r"^\s{2}(.+):\s*$", line)
+            if not match:
+                continue
+            key = match.group(1).strip().strip("'\"").lstrip("/")
+            if key.startswith(("file:", "link:", "workspace:")) or "@" not in key:
+                continue
+            name, version = key.rsplit("@", 1)
+            version = version.split("(", 1)[0]
+            if name and re.match(r"^\d", version):
+                versions[name].add(version)
+        for name, candidates in versions.items():
+            if len(candidates) == 1:
+                workspace_locks[name] = (next(iter(candidates)), lock_path)
     for path in root.rglob("package.json"):
         if any(part in IGNORED_PARTS for part in path.parts):
             continue
@@ -274,7 +299,9 @@ def _components(root: Path) -> list[Component]:
                     layer = "工程工具" if scope == "devDependencies" else "前端"
                     locked = locked_packages.get(f"node_modules/{name}", {}).get("version", "")
                     locked = locked or legacy_dependencies.get(name, {}).get("version", "")
-                    evidence_path = lock_path if locked else path
+                    workspace_locked, workspace_path = workspace_locks.get(name, ("", path))
+                    locked = locked or workspace_locked
+                    evidence_path = lock_path if lock_path.is_file() and locked else workspace_path if workspace_locked else path
                     item = Component(name, version, locked, "npm", layer, scope, _evidence(evidence_path, root, 1, f'"{name}": "{locked or version}"'))
                     found.setdefault(("npm", name.lower()), item)
     for path in root.rglob("pyproject.toml"):
