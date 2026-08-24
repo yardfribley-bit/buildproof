@@ -44,6 +44,20 @@
 
 Code-Graph-RAG parses a multi-language codebase with Tree-sitter, builds a knowledge graph of its structure in Memgraph, and lets you query, edit, and optimise that code in plain English. It works across a monorepo of mixed languages under one unified graph schema.
 
+## BuildProof Web Console
+
+BuildProof is the product-facing system-analysis console for agent-generated
+applications. It automatically maps Web pages to frontend requests and backend
+routes, groups APIs into business domains, and links every conclusion to source
+evidence — no Cypher required.
+
+```bash
+uv run buildproof --repo /path/to/agent-built-app
+```
+
+Then open `http://127.0.0.1:8765`. See the
+[BuildProof guide](docs/guide/buildproof.md) for Docker deployment and API use.
+
 <p align="center">
   <img src="./assets/demo.gif" alt="demo">
 </p>

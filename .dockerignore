@@ -16,6 +16,7 @@ wheels
 *.egg-info
 docs
 site
+test-repos
 .github
 .qdrant_code_embeddings
 CLAUDE.md

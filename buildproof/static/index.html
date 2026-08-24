@@ -1,0 +1,36 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>BuildProof — 看懂 Agent 构建的系统</title>
+    <link rel="stylesheet" href="/assets/styles.css" />
+  </head>
+  <body>
+    <div class="shell">
+      <aside>
+        <div class="brand"><span class="mark">B</span><div><b>BuildProof</b><small>Code intelligence</small></div></div>
+        <nav>
+          <button class="active" data-view="overview">系统总览</button>
+          <button data-view="surfaces">Web 暴露面</button>
+          <button data-view="domains">业务能力</button>
+          <button data-view="endpoints">API 清单</button>
+        </nav>
+        <div class="aside-note">图数据库已隐藏。所有结论都附源码证据。</div>
+      </aside>
+      <main>
+        <header>
+          <div><p class="eyebrow">AI-GENERATED CODE ANALYSIS</p><h1 id="title">系统总览</h1></div>
+          <form id="analyze-form">
+            <input id="repo" placeholder="输入本地代码仓库路径" />
+            <button>分析项目</button>
+          </form>
+        </header>
+        <div id="status" class="status">输入仓库路径开始分析。</div>
+        <section id="content"></section>
+      </main>
+    </div>
+    <script src="/assets/app.js"></script>
+  </body>
+</html>
+

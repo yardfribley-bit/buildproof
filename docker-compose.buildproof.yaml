@@ -1,0 +1,11 @@
+services:
+  buildproof:
+    build:
+      context: .
+      dockerfile: Dockerfile.buildproof
+    ports:
+      - "${BUILDPROOF_BIND_HOST:-127.0.0.1}:${BUILDPROOF_PORT:-8765}:8765"
+    volumes:
+      - "${BUILDPROOF_REPO_PATH:?Set BUILDPROOF_REPO_PATH}:/workspace/repo:ro"
+    restart: unless-stopped
+
