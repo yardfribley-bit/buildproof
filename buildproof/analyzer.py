@@ -94,21 +94,20 @@ def _template_matches(client: str, server: str) -> bool:
 
 def _resolve_import(source: Path, spec: str, root: Path, candidates: set[Path]) -> Path | None:
     if spec.startswith("@/"):
-        base = root / "web" / spec[2:]
+        bases = [parent / spec[2:] for parent in source.parents if parent == root or root in parent.parents]
     elif spec.startswith("."):
-        base = source.parent / spec
+        bases = [source.parent / spec]
     else:
         return None
-    variants = [base]
-    variants.extend(base.with_suffix(suffix) for suffix in (".ts", ".tsx", ".js", ".jsx"))
-    variants.extend(base / f"index{suffix}" for suffix in (".ts", ".tsx", ".js", ".jsx"))
+    variants = []
+    for base in bases:
+        variants.append(base)
+        variants.extend(base.with_suffix(suffix) for suffix in (".ts", ".tsx", ".js", ".jsx"))
+        variants.extend(base / f"index{suffix}" for suffix in (".ts", ".tsx", ".js", ".jsx"))
     return next((item.resolve() for item in variants if item.resolve() in candidates), None)
 
 
 def _frontend(root: Path, files: list[Path]) -> list[WebSurface]:
-    app_root = root / "web" / "app"
-    if not app_root.exists():
-        return []
     candidate_set = {path.resolve() for path in files if path.suffix in {".js", ".jsx", ".ts", ".tsx"}}
     imports: dict[Path, list[Path]] = defaultdict(list)
     direct_calls: dict[Path, list[ClientCall]] = defaultdict(list)
@@ -128,7 +127,11 @@ def _frontend(root: Path, files: list[Path]) -> list[WebSurface]:
                 imports[path].append(resolved)
 
     surfaces: list[WebSurface] = []
-    for page in sorted(app_root.rglob("page.tsx")):
+    page_files = [path for path in candidate_set if re.fullmatch(r"page\.(?:js|jsx|ts|tsx)", path.name)]
+    for page in sorted(page_files):
+        app_root = next((parent for parent in page.parents if parent.name == "app"), None)
+        if app_root is None:
+            continue
         queue = deque([page.resolve()])
         seen: set[Path] = set()
         calls: dict[tuple[str, str], ClientCall] = {}
@@ -155,37 +158,37 @@ def _literal(node: ast.AST | None) -> str | None:
 
 
 def _router_mounts(root: Path) -> dict[str, tuple[str, str]]:
-    main = root / "deeptutor" / "api" / "main.py"
-    text = _read(main)
     mounts: dict[str, tuple[str, str]] = {}
     pattern = re.compile(
         r"app\.include_router\(\s*([\w_]+)\.router\s*,(.*?)\)", re.DOTALL
     )
-    for match in pattern.finditer(text):
-        body = match.group(2)
-        prefix = re.search(r"prefix\s*=\s*[\"']([^\"']+)", body)
-        dependencies = "admin" if "_admin" in body or "require_admin" in body else "authenticated"
-        mounts[match.group(1)] = (prefix.group(1) if prefix else "", dependencies)
-    mounts["auth"] = ("/api/v1/auth", "public")
+    for path in root.rglob("*.py"):
+        if any(part in IGNORED_PARTS for part in path.parts):
+            continue
+        for match in pattern.finditer(_read(path)):
+            body = match.group(2)
+            prefix = re.search(r"prefix\s*=\s*[\"']([^\"']+)", body)
+            dependencies = "admin" if "_admin" in body or "require_admin" in body else "authenticated"
+            mounts[match.group(1)] = (prefix.group(1) if prefix else "", dependencies)
     return mounts
 
 
 def _backend(root: Path, files: list[Path]) -> list[Endpoint]:
     mounts = _router_mounts(root)
     endpoints: list[Endpoint] = []
-    router_root = root / "deeptutor" / "api" / "routers"
-    api_main = root / "deeptutor" / "api" / "main.py"
     for path in files:
-        if path.suffix != ".py" or (router_root not in path.parents and path != api_main):
+        if path.suffix != ".py":
             continue
         text = _read(path)
+        if "@router." not in text and "@app." not in text:
+            continue
         try:
             tree = ast.parse(text)
         except SyntaxError:
             continue
         module = path.stem
         prefix, default_auth = mounts.get(
-            module, ("", "public" if path == api_main else "authenticated")
+            module, ("", "public" if path.name in {"main.py", "app.py"} else "authenticated")
         )
         lines = text.splitlines()
         for node in ast.walk(tree):

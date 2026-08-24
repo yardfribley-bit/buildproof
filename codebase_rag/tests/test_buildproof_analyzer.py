@@ -148,3 +148,21 @@ def test_article_library_and_article_are_served() -> None:
     assert "Agent 开始写完整系统" in article.text
     assert screenshot.status_code == 200
     assert screenshot.headers["content-type"] == "image/png"
+
+
+def test_discovers_non_deeptutor_next_and_fastapi_layouts(tmp_path: Path) -> None:
+    _write(tmp_path / "frontend/app/dashboard/page.tsx", 'fetch("/api/items");\n')
+    _write(
+        tmp_path / "backend/routes/items.py",
+        'router = APIRouter()\n@router.get("/")\nasync def list_items(): pass\n',
+    )
+    _write(
+        tmp_path / "backend/main.py",
+        'app.include_router(items.router, prefix="/api/items")\n',
+    )
+
+    report = analyze_repository(tmp_path)
+
+    assert report.pages[0].route == "/dashboard"
+    assert report.endpoints[0].path == "/api/items"
+    assert report.pages[0].endpoints[0].handler == "list_items"
