@@ -29,6 +29,40 @@ def _public_mode() -> bool:
     return os.environ.get("BUILDPROOF_PUBLIC", "").lower() in {"1", "true", "yes"}
 
 
+def _reports_root() -> Path:
+    root = Path(os.environ.get("BUILDPROOF_DATA", "/tmp/buildproof")) / "reports"
+    root.mkdir(parents=True, exist_ok=True)
+    return root
+
+
+def _report_id(report: dict[str, object]) -> str:
+    root = str(report.get("root", ""))
+    match = GITHUB_REPO.fullmatch(root)
+    if match:
+        return f"{match.group('owner')}--{match.group('repo')}".lower()
+    return re.sub(r"[^a-z0-9_.-]+", "-", str(report.get("project", "project")).lower())
+
+
+def _save_report(report: dict[str, object]) -> dict[str, object]:
+    report = {**report, "id": _report_id(report)}
+    destination = _reports_root() / f"{report['id']}.json"
+    temporary = destination.with_suffix(".tmp")
+    temporary.write_text(json.dumps(report, ensure_ascii=False), encoding="utf-8")
+    temporary.replace(destination)
+    return report
+
+
+def _history() -> list[dict[str, object]]:
+    projects = []
+    for path in _reports_root().glob("*.json"):
+        try:
+            report = json.loads(path.read_text(encoding="utf-8"))
+            projects.append({key: report[key] for key in ("id", "project", "root", "generated_at", "stats")})
+        except (KeyError, OSError, json.JSONDecodeError):
+            continue
+    return sorted(projects, key=lambda item: str(item["generated_at"]), reverse=True)
+
+
 def _prepare_public_repository(value: str) -> tuple[Path, str]:
     match = GITHUB_REPO.fullmatch(value.strip())
     if not match:
@@ -73,7 +107,7 @@ def _analyze(repo: str) -> dict[str, object]:
     report = analyze_repository(path).to_dict()
     if _public_mode():
         report["root"] = source
-    return report
+    return _save_report(report)
 
 
 async def index(_request: Request) -> FileResponse:
@@ -104,6 +138,20 @@ async def analyze(request: Request) -> JSONResponse:
     return JSONResponse(report)
 
 
+async def history(_request: Request) -> JSONResponse:
+    return JSONResponse(_history())
+
+
+async def saved_report(request: Request) -> JSONResponse:
+    report_id = request.path_params["report_id"].lower()
+    if not re.fullmatch(r"[a-z0-9_.-]+", report_id):
+        return JSONResponse({"error": "Invalid report id."}, status_code=400)
+    path = _reports_root() / f"{report_id}.json"
+    if not path.is_file():
+        return JSONResponse({"error": "Report not found."}, status_code=404)
+    return JSONResponse(json.loads(path.read_text(encoding="utf-8")))
+
+
 def create_app() -> Starlette:
     return Starlette(
         debug=False,
@@ -111,6 +159,8 @@ def create_app() -> Starlette:
             Route("/", index),
             Route("/assets/{name}", asset),
             Route("/api/analyze", analyze, methods=["GET", "POST"]),
+            Route("/api/projects", history),
+            Route("/api/projects/{report_id}", saved_report),
         ],
     )
 

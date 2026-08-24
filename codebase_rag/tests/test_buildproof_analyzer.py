@@ -87,3 +87,22 @@ def test_public_mode_rejects_local_paths(tmp_path: Path) -> None:
 
     assert response.status_code == 400
     assert "GitHub" in response.json()["error"]
+
+
+def test_saved_reports_are_listed_and_retrievable(tmp_path: Path) -> None:
+    previous = os.environ.get("BUILDPROOF_DATA")
+    os.environ["BUILDPROOF_DATA"] = str(tmp_path / "data")
+    _write(tmp_path / "repo/web/app/page.tsx", 'fetch("/api/status");\n')
+    try:
+        with TestClient(create_app()) as client:
+            analyzed = client.post("/api/analyze", json={"repo": str(tmp_path / "repo")})
+            projects = client.get("/api/projects")
+            saved = client.get(f"/api/projects/{analyzed.json()['id']}")
+    finally:
+        if previous is None:
+            os.environ.pop("BUILDPROOF_DATA", None)
+        else:
+            os.environ["BUILDPROOF_DATA"] = previous
+
+    assert projects.json()[0]["project"] == "repo"
+    assert saved.json()["stats"]["pages"] == 1
