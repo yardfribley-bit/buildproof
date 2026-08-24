@@ -32,9 +32,14 @@
 .risk-body > div { display: grid; align-content: start; gap: 4px; min-width: 0; }
 .risk-body small { color: var(--muted); font-weight: 700; }
 .risk-body p { margin: 4px 0; }
+.runtime-list { display: grid; margin-top: 14px; }
+.runtime-row { display: grid; grid-template-columns: 90px 110px minmax(0, 1fr) auto; gap: 10px; align-items: center; padding: 9px 0; border-top: 1px solid var(--line); }
+.runtime-row > span:first-child { color: var(--muted); font-variant-numeric: tabular-nums; }
 @media (max-width: 900px) {
   .security-metrics { grid-template-columns: repeat(2, 1fr); }
   .risk-body, .proof-grid { grid-template-columns: 1fr; }
   .risk-item summary { display: grid; }
   .risk-toolbar { align-items: flex-start; flex-wrap: wrap; }
+  .runtime-row { grid-template-columns: 78px 90px minmax(0, 1fr); }
+  .runtime-row > span:last-child { grid-column: 2 / -1; }
 }

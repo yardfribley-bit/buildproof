@@ -192,6 +192,48 @@ def test_rescan_all_updates_every_monitored_project_and_status(tmp_path: Path, m
     assert saved_status["results"][0]["attack_surfaces"] == 3
 
 
+def test_runtime_ingest_requires_token_and_returns_redacted_summary(tmp_path: Path) -> None:
+    previous_data = os.environ.get("BUILDPROOF_DATA")
+    previous_token = os.environ.get("BUILDPROOF_RUNTIME_TOKEN")
+    os.environ["BUILDPROOF_DATA"] = str(tmp_path / "data")
+    os.environ["BUILDPROOF_RUNTIME_TOKEN"] = "test-runtime-token"
+    reports = tmp_path / "data/reports"
+    reports.mkdir(parents=True)
+    _write(reports / "owner--repo.json", json.dumps({"id": "owner--repo"}))
+    payload = {
+        "source": "surface-node",
+        "events": [{
+            "ts": 1_700_000_000, "etype": "HTTP", "method": "POST",
+            "url": "/api/login?password=must-not-be-copied", "status": "401",
+            "tags": ["auth_brute"], "raw_secret": "never stored",
+        }],
+    }
+    try:
+        with TestClient(create_app()) as client:
+            denied = client.post("/api/runtime/ingest/owner--repo", json=payload)
+            accepted = client.post(
+                "/api/runtime/ingest/owner--repo",
+                json=payload,
+                headers={"authorization": "Bearer test-runtime-token"},
+            )
+            summary = client.get("/api/projects/owner--repo/runtime")
+    finally:
+        if previous_data is None:
+            os.environ.pop("BUILDPROOF_DATA", None)
+        else:
+            os.environ["BUILDPROOF_DATA"] = previous_data
+        if previous_token is None:
+            os.environ.pop("BUILDPROOF_RUNTIME_TOKEN", None)
+        else:
+            os.environ["BUILDPROOF_RUNTIME_TOKEN"] = previous_token
+
+    assert denied.status_code == 401
+    assert accepted.json() == {"accepted": 1}
+    assert summary.json()["status"] == "observing"
+    assert summary.json()["alerts"] == 1
+    assert "raw_secret" not in json.dumps(summary.json())
+
+
 def test_analysis_api_returns_evidence_report(tmp_path: Path) -> None:
     _write(tmp_path / "web/app/page.tsx", 'fetch("/api/v1/status");\n')
     _write(

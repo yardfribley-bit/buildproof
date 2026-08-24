@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import argparse
 import asyncio
+import hmac
 import json
 import os
 import re
@@ -17,6 +18,7 @@ from starlette.responses import FileResponse, JSONResponse
 from starlette.routing import Route
 
 from .analyzer import analyze_repository
+from .runtime_audit import MAX_BATCH_BYTES, append_events, parse_batch, runtime_summary
 
 STATIC_ROOT = Path(__file__).with_name("static")
 GITHUB_REPO = re.compile(
@@ -37,6 +39,10 @@ def _reports_root() -> Path:
 
 def _rescan_status_path() -> Path:
     return _reports_root().parent / "rescan-status.json"
+
+
+def _runtime_root() -> Path:
+    return _reports_root().parent / "runtime"
 
 
 def _report_id(report: dict[str, object]) -> str:
@@ -176,6 +182,33 @@ async def rescan_status(_request: Request) -> JSONResponse:
         return JSONResponse({"status": "unknown", "error": "扫描状态文件不可读。"}, status_code=503)
 
 
+async def runtime_ingest(request: Request) -> JSONResponse:
+    expected = os.environ.get("BUILDPROOF_RUNTIME_TOKEN", "")
+    supplied = request.headers.get("authorization", "").removeprefix("Bearer ")
+    if not expected or not hmac.compare_digest(supplied, expected):
+        return JSONResponse({"error": "Unauthorized."}, status_code=401)
+    report_id = request.path_params["report_id"].lower()
+    if not re.fullmatch(r"[a-z0-9_.-]+", report_id):
+        return JSONResponse({"error": "Invalid report id."}, status_code=400)
+    if not (_reports_root() / f"{report_id}.json").is_file():
+        return JSONResponse({"error": "Report not found."}, status_code=404)
+    if int(request.headers.get("content-length", "0") or 0) > MAX_BATCH_BYTES:
+        return JSONResponse({"error": "Runtime event batch exceeds 1 MiB."}, status_code=413)
+    try:
+        events = parse_batch(await request.body(), request.headers.get("x-runtime-source", "surface"))
+        append_events(_runtime_root(), report_id, events)
+    except (UnicodeDecodeError, json.JSONDecodeError, ValueError) as exc:
+        return JSONResponse({"error": str(exc)}, status_code=400)
+    return JSONResponse({"accepted": len(events)})
+
+
+async def project_runtime(request: Request) -> JSONResponse:
+    report_id = request.path_params["report_id"].lower()
+    if not re.fullmatch(r"[a-z0-9_.-]+", report_id):
+        return JSONResponse({"error": "Invalid report id."}, status_code=400)
+    return JSONResponse(runtime_summary(_runtime_root(), report_id))
+
+
 async def saved_report(request: Request) -> JSONResponse:
     report_id = request.path_params["report_id"].lower()
     if not re.fullmatch(r"[a-z0-9_.-]+", report_id):
@@ -211,8 +244,10 @@ def create_app() -> Starlette:
             Route("/api/analyze", analyze, methods=["GET", "POST"]),
             Route("/api/projects", history),
             Route("/api/rescan-status", rescan_status),
+            Route("/api/runtime/ingest/{report_id}", runtime_ingest, methods=["POST"]),
             Route("/api/projects/{report_id}", saved_report),
             Route("/api/projects/{report_id}/attack-manifest", attack_manifest),
+            Route("/api/projects/{report_id}/runtime", project_runtime),
         ],
     )
 
