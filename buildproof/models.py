@@ -44,6 +44,15 @@ class BusinessDomain:
     endpoints: list[str] = field(default_factory=list)
 
 
+@dataclass(frozen=True)
+class Component:
+    name: str
+    version: str
+    ecosystem: str
+    scope: str
+    evidence: Evidence
+
+
 @dataclass
 class AnalysisReport:
     project: str
@@ -53,10 +62,10 @@ class AnalysisReport:
     pages: list[WebSurface]
     endpoints: list[Endpoint]
     domains: list[BusinessDomain]
+    components: list[Component]
     stats: dict[str, int]
     warnings: list[str]
     generated_at: str
 
     def to_dict(self) -> dict[str, Any]:
         return asdict(self)
-

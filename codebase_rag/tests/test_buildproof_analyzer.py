@@ -45,6 +45,7 @@ def test_maps_next_page_through_imports_to_fastapi_route(tmp_path: Path) -> None
     assert report.stats["mapped_calls"] == 1
     assert report.pages[0].route == "/users"
     assert report.pages[0].endpoints[0].path == "/api/v1/users/:param"
+    assert report.pages[0].endpoints[0].handler == "get_user"
 
 
 def test_marks_unresolved_client_calls_without_guessing(tmp_path: Path) -> None:
@@ -106,3 +107,19 @@ def test_saved_reports_are_listed_and_retrievable(tmp_path: Path) -> None:
 
     assert projects.json()[0]["project"] == "repo"
     assert saved.json()["stats"]["pages"] == 1
+
+
+def test_extracts_direct_supply_chain_components(tmp_path: Path) -> None:
+    _write(
+        tmp_path / "web/package.json",
+        json.dumps({"dependencies": {"next": "16.2.3"}, "devDependencies": {"eslint": "^9.0.0"}}),
+    )
+    _write(tmp_path / "requirements.txt", "fastapi==0.116.1\nuvicorn>=0.35\n")
+
+    report = analyze_repository(tmp_path)
+    components = {(item.ecosystem, item.name): item.version for item in report.components}
+
+    assert components[("npm", "next")] == "16.2.3"
+    assert components[("npm", "eslint")] == "^9.0.0"
+    assert components[("PyPI", "fastapi")] == "==0.116.1"
+    assert report.stats["components"] == 4

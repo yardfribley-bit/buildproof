@@ -3,6 +3,7 @@ from __future__ import annotations
 import ast
 import json
 import re
+import tomllib
 from collections import defaultdict, deque
 from datetime import UTC, datetime
 from pathlib import Path
@@ -11,6 +12,7 @@ from .models import (
     AnalysisReport,
     BusinessDomain,
     ClientCall,
+    Component,
     Endpoint,
     Evidence,
     WebSurface,
@@ -242,6 +244,51 @@ def _technologies(root: Path) -> list[str]:
     return list(dict.fromkeys(tech))
 
 
+def _components(root: Path) -> list[Component]:
+    found: dict[tuple[str, str], Component] = {}
+    for path in root.rglob("package.json"):
+        if any(part in IGNORED_PARTS for part in path.parts):
+            continue
+        try:
+            package = json.loads(_read(path))
+        except json.JSONDecodeError:
+            continue
+        for scope in ("dependencies", "devDependencies", "peerDependencies", "optionalDependencies"):
+            for name, version in package.get(scope, {}).items():
+                if isinstance(version, str):
+                    item = Component(name, version, "npm", scope, _evidence(path, root, 1, f'"{name}": "{version}"'))
+                    found.setdefault(("npm", name.lower()), item)
+    for path in root.rglob("pyproject.toml"):
+        if any(part in IGNORED_PARTS for part in path.parts):
+            continue
+        try:
+            project = tomllib.loads(_read(path)).get("project", {})
+        except (tomllib.TOMLDecodeError, AttributeError):
+            continue
+        groups = [("dependencies", project.get("dependencies", []))]
+        groups.extend((f"optional:{name}", values) for name, values in project.get("optional-dependencies", {}).items())
+        for scope, values in groups:
+            for value in values:
+                match = re.match(r"\s*([A-Za-z0-9_.-]+(?:\[[^]]+])?)\s*(.*)", str(value))
+                if match:
+                    name, version = match.group(1), match.group(2).strip() or "unspecified"
+                    item = Component(name, version, "PyPI", scope, _evidence(path, root, 1, str(value)))
+                    found.setdefault(("pypi", name.lower()), item)
+    requirement = re.compile(r"^\s*([A-Za-z0-9_.-]+(?:\[[^]]+])?)\s*([^;\s#]*)")
+    for path in root.rglob("requirements*.txt"):
+        if any(part in IGNORED_PARTS for part in path.parts):
+            continue
+        for line_number, line in enumerate(_read(path).splitlines(), 1):
+            if not line.strip() or line.lstrip().startswith(("#", "-")):
+                continue
+            match = requirement.match(line)
+            if match:
+                name, version = match.group(1), match.group(2) or "unspecified"
+                item = Component(name, version, "PyPI", "requirements", _evidence(path, root, line_number, line))
+                found.setdefault(("pypi", name.lower()), item)
+    return sorted(found.values(), key=lambda item: (item.ecosystem, item.name.lower()))
+
+
 def _entrypoints(root: Path) -> list[Evidence]:
     patterns = ("run_server.py", "main.py", "server.py", "manage.py", "package.json")
     found: list[Evidence] = []
@@ -269,6 +316,7 @@ def analyze_repository(repo_path: str | Path) -> AnalysisReport:
     files = _files(root)
     pages = _frontend(root, files)
     endpoints = _backend(root, files)
+    components = _components(root)
     for page in pages:
         for call in page.calls:
             matches = [endpoint for endpoint in endpoints if _template_matches(call.path, endpoint.path)]
@@ -302,6 +350,7 @@ def analyze_repository(repo_path: str | Path) -> AnalysisReport:
         pages=pages,
         endpoints=endpoints,
         domains=sorted(domains.values(), key=lambda item: (-len(item.endpoints), item.name)),
+        components=components,
         stats={
             "source_files": len(files),
             "pages": len(pages),
@@ -316,6 +365,7 @@ def analyze_repository(repo_path: str | Path) -> AnalysisReport:
             ),
             "unresolved_calls": unresolved,
             "business_domains": len(domains),
+            "components": len(components),
         },
         warnings=warnings,
         generated_at=datetime.now(UTC).isoformat(),
