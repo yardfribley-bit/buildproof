@@ -56,9 +56,20 @@ def build_attack_manifest(
     relations: list[CallRelation],
 ) -> dict[str, Any]:
     surfaces: list[dict[str, Any]] = []
+    seen: set[tuple[str, str, str, str, str]] = set()
     hypothesis_count = 0
     for index, relation in enumerate(relations, 1):
         endpoint = relation.backend or relation.api
+        key = (
+            relation.page,
+            relation.call.method,
+            relation.call.path,
+            endpoint.method if endpoint else "",
+            endpoint.path if endpoint else "",
+        )
+        if key in seen:
+            continue
+        seen.add(key)
         hypotheses: list[dict[str, Any]] = []
         signals: list[dict[str, Any]] = []
         if endpoint and endpoint.layer == "backend":
@@ -111,7 +122,7 @@ def build_attack_manifest(
             {
                 "id": f"surface-{index}",
                 "page": relation.page,
-                "request": {"path": relation.call.path, "transport": relation.call.transport},
+                "request": {"method": relation.call.method, "path": relation.call.path, "transport": relation.call.transport},
                 "api": asdict(relation.api) if relation.api else None,
                 "backend": asdict(relation.backend) if relation.backend else None,
                 "relation_status": relation.status,

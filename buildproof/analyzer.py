@@ -127,6 +127,16 @@ def _normalize_template(value: str) -> str:
     return value.rstrip("/") or "/"
 
 
+def _client_method(text: str, match: re.Match[str]) -> str:
+    before = text[max(0, match.start() - 120) : match.start()]
+    after = text[match.end() : match.end() + 260]
+    fluent = re.search(r"\.(get|post|put|patch|delete|options|head)\s*\(\s*$", before, re.IGNORECASE)
+    if fluent:
+        return fluent.group(1).upper()
+    configured = re.search(r"\bmethod\s*:\s*[\"'](GET|POST|PUT|PATCH|DELETE|OPTIONS|HEAD)[\"']", after, re.IGNORECASE)
+    return configured.group(1).upper() if configured else "ANY"
+
+
 def _template_matches(client: str, server: str) -> bool:
     left = _normalize_template(client).split("/")
     right = _normalize_template(server).split("/")
@@ -162,7 +172,7 @@ def _frontend(root: Path, files: list[Path]) -> list[WebSurface]:
             literal = match.group(1)
             transport = "websocket" if "wsUrl(" in lines[line - 1] or "WebSocket" in lines[line - 1] else "http"
             direct_calls[path].append(
-                ClientCall(literal, transport, _evidence(path, root, line, lines[line - 1]))
+                ClientCall(literal, transport, _evidence(path, root, line, lines[line - 1]), _client_method(text, match))
             )
         if "supabase" in text.lower() or "createClient" in text:
             kinds = ("auth", "table", "storage")
@@ -189,14 +199,14 @@ def _frontend(root: Path, files: list[Path]) -> list[WebSurface]:
             continue
         queue = deque([page.resolve()])
         seen: set[Path] = set()
-        calls: dict[tuple[str, str], ClientCall] = {}
+        calls: dict[tuple[str, str, str], ClientCall] = {}
         while queue and len(seen) < 600:
             current = queue.popleft()
             if current in seen:
                 continue
             seen.add(current)
             for call in direct_calls.get(current, []):
-                calls[(call.path, call.transport)] = call
+                calls[(call.path, call.transport, call.method)] = call
             queue.extend(imports.get(current, []))
         surfaces.append(
             WebSurface(
@@ -518,8 +528,11 @@ def analyze_repository(repo_path: str | Path) -> AnalysisReport:
     relations: list[CallRelation] = []
     for page in pages:
         for call in page.calls:
-            api_matches = [endpoint for endpoint in next_endpoints if _template_matches(call.path, endpoint.path)]
-            direct_matches = [endpoint for endpoint in backend_endpoints + external_endpoints if _template_matches(call.path, endpoint.path)]
+            def method_matches(endpoint: Endpoint) -> bool:
+                return call.method == "ANY" or endpoint.method in {call.method, "SDK", "WS"}
+
+            api_matches = [endpoint for endpoint in next_endpoints if _template_matches(call.path, endpoint.path) and method_matches(endpoint)]
+            direct_matches = [endpoint for endpoint in backend_endpoints + external_endpoints if _template_matches(call.path, endpoint.path) and method_matches(endpoint)]
             if api_matches:
                 page.endpoints.extend(api_matches)
                 for api in api_matches:

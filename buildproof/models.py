@@ -27,6 +27,7 @@ class ClientCall:
     path: str
     transport: str
     evidence: Evidence
+    method: str = "ANY"
 
 
 @dataclass(frozen=True)

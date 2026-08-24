@@ -119,6 +119,21 @@ def test_generates_shannon_attack_manifest_with_candidate_and_evidence(tmp_path:
     assert all(item["status"] == "candidate" for item in surface["hypotheses"])
 
 
+def test_uses_frontend_http_method_to_avoid_ambiguous_routes(tmp_path: Path) -> None:
+    _write(tmp_path / "web/app/page.tsx", 'api.post("/api/items");\n')
+    _write(
+        tmp_path / "backend/items.py",
+        'router = APIRouter(prefix="/api/items")\n'
+        '@router.get("")\nasync def list_items(): pass\n'
+        '@router.post("")\nasync def create_item(): pass\n',
+    )
+
+    report = analyze_repository(tmp_path)
+
+    assert report.pages[0].calls[0].method == "POST"
+    assert [item.backend.handler for item in report.relations if item.backend] == ["create_item"]
+
+
 def test_attack_manifest_api_is_machine_readable(tmp_path: Path) -> None:
     previous = os.environ.get("BUILDPROOF_DATA")
     os.environ["BUILDPROOF_DATA"] = str(tmp_path / "data")
